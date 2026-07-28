@@ -16,6 +16,10 @@
 | VCAS-NFR-002 | 8 小时无崩溃、显存持续增长或旧 Run 串入 | planned | Run generation | 复用代际抑制与心跳 | 计划：8 小时稳定性报告 |
 | VCAS-NFR-003 | 数据、模型、配置和代码版本可追溯 | in_progress | `config_version`、`model_versions` | Schema 与阶段记录 | `vehicle_contract_test.py` |
 | VCAS-NFR-004 | 不在 Git 中保存机器专用模型和运行产物 | verified | `.gitignore` | 仓库策略 | M0 tracked-file audit |
+| VCAS-DATA-001 | 标签映射、别名和 unknown 策略必须版本化 | verified | `vehicle_labels.v1.json` | M1 数据契约 | `dataset_manifest_contract_test.py` |
+| VCAS-DATA-002 | 未批准来源不得进入训练、验证或测试 | in_progress | Dataset Manifest `sources` | Manifest Validator | 许可门禁负向测试 |
+| VCAS-DATA-003 | 摄像头、视频和轨迹分组不得跨 Split | verified | `split_policy.group_keys` | Manifest Validator | 泄漏负向测试 |
+| VCAS-DATA-004 | 样本文件、来源和标签版本必须可追溯 | verified | Dataset Manifest v1 | Manifest Validator | Manifest 示例与契约测试 |
 
 ## 更新规则
 

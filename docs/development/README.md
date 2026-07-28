@@ -14,7 +14,7 @@
 | 阶段 | 状态 | 记录 | 主要产物 |
 |---|---|---|---|
 | M0 基线与接口冻结 | in_progress | [VCAS_M0_BASELINE.md](VCAS_M0_BASELINE.md) | 基线清单、事件 Schema、配置契约、追溯矩阵 |
-| M1 数据规范 | planned | 待创建 | 标签映射、许可台账、试标规范 |
+| M1 数据规范 | in_progress | [VCAS_M1_DATA_SPEC.md](VCAS_M1_DATA_SPEC.md) | 标签映射、许可台账、Manifest 与试标规范 |
 | M2 模型接口 | planned | 待创建 | Detection/Attribute Runner、模型注册表 |
 | M3 级联运行时 | planned | 待创建 | 跟踪、门控、属性池、轨迹融合 |
 | M4 存储与 API | planned | 待创建 | 数据迁移、车辆事件 API、快照和回调 |

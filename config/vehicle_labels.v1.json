@@ -1,0 +1,60 @@
+{
+  "schema_version": "1.0",
+  "labels_version": "vehicle-labels-v1",
+  "vehicle_classes": [
+    "car",
+    "bus",
+    "truck",
+    "motorcycle",
+    "vehicle",
+    "other"
+  ],
+  "body_types": [
+    "sedan",
+    "suv",
+    "mpv",
+    "van",
+    "pickup",
+    "bus",
+    "light_truck",
+    "heavy_truck",
+    "other",
+    "unknown"
+  ],
+  "colors": [
+    "black",
+    "white",
+    "silver_gray",
+    "red",
+    "blue",
+    "green",
+    "yellow_orange",
+    "brown_beige",
+    "other",
+    "unknown"
+  ],
+  "crop_qualities": [
+    "good",
+    "usable",
+    "poor"
+  ],
+  "viewpoints": [
+    "front",
+    "rear",
+    "side",
+    "front_three_quarter",
+    "rear_three_quarter",
+    "unknown"
+  ],
+  "normalization_aliases": {
+    "gray": "silver_gray",
+    "grey": "silver_gray",
+    "silver": "silver_gray"
+  },
+  "unknown_policy": {
+    "vehicle_class_allows_unknown": false,
+    "body_type_allows_unknown": true,
+    "color_allows_unknown": true,
+    "poor_crop_must_not_force_attribute_label": true
+  }
+}

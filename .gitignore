@@ -15,6 +15,12 @@
 /models/
 /datasets/
 
+# Dataset payloads stay outside Git; only versioned manifests are tracked.
+/data/raw/
+/data/interim/
+/data/processed/
+/data/cache/
+
 # IDE/user-specific files
 /.vs/
 /.vscode/
