@@ -6,6 +6,8 @@
 - 上游分支：`agent/unified-camera-r8`
 - 上游提交：`c9f5000`
 - 导入日期：`2026-07-28`
+- `car_detect/main` 根提交：`44c29fc84c5aaf49980b1ebb2319858b566902cb`
+- 根 Tree：`ea2ebcdb96f95ee0cc12bbe7a121775d6aad2c44`
 
 `car_detect` 使用独立的单提交历史。上游仓库保留为本地 `upstream` 远程，仅用于追溯和对照，不作为新项目的发布目标。
 
