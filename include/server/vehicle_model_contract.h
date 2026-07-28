@@ -69,6 +69,17 @@ struct ImageView {
     bool valid() const noexcept;
 };
 
+struct OwnedImage {
+    std::vector<std::uint8_t> pixels;
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    std::size_t row_stride_bytes = 0;
+
+    bool valid() const noexcept;
+    ImageView view() const noexcept;
+};
+
 struct VehicleBox {
     float x1 = 0.0f;
     float y1 = 0.0f;
@@ -110,7 +121,7 @@ struct VehicleDetectionResult {
 };
 
 struct VehicleAttributeCrop {
-    ImageView crop;
+    std::shared_ptr<const OwnedImage> crop;
     std::string camera_id;
     std::string run_id;
     std::uint64_t run_generation = 0;

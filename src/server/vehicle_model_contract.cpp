@@ -190,6 +190,26 @@ bool ImageView::valid() const noexcept {
     return row_stride_bytes >= minimum_stride;
 }
 
+bool OwnedImage::valid() const noexcept {
+    if (width <= 0 || height <= 0 || channels <= 0) return false;
+    const auto minimum_stride =
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(channels);
+    if (row_stride_bytes < minimum_stride) return false;
+    const auto required_size =
+        row_stride_bytes * static_cast<std::size_t>(height);
+    return pixels.size() >= required_size;
+}
+
+ImageView OwnedImage::view() const noexcept {
+    return {
+        pixels.empty() ? nullptr : pixels.data(),
+        width,
+        height,
+        channels,
+        row_stride_bytes,
+    };
+}
+
 bool VehicleBox::valid() const noexcept {
     return x1 >= 0.0f && y1 >= 0.0f &&
         x1 < x2 && y1 < y2 &&

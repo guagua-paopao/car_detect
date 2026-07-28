@@ -145,6 +145,7 @@ def main() -> None:
         "docs/development/VCAS_M0_BASELINE.md",
         "docs/development/VCAS_M1_DATA_SPEC.md",
         "docs/development/VCAS_M2_MODEL_INTERFACES.md",
+        "docs/development/VCAS_M3_CASCADE_RUNTIME.md",
     ):
         if not (ROOT / relative).is_file():
             raise AssertionError(f"missing traceability document: {relative}")

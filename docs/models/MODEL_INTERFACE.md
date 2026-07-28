@@ -39,7 +39,9 @@ M3 运行时必须在接收结果时再次核对 `run_generation`，禁止旧 Ru
 - 摄像头、Run 与 `run_generation`；
 - `track_id` 和单调递增的 `crop_sequence`；
 - 裁剪质量分数；
-- 图像内存视图。
+- 由 `shared_ptr<const OwnedImage>` 持有的不可变图像缓冲区。
+
+属性裁剪会进入异步有界队列，因此不能只保存调用方帧内存的裸视图。M3 将裁剪改为拥有型不可变缓冲区，队列、微批和 Runner 通过共享只读所有权保证生命周期安全。
 
 每个 `VehicleAttributeResult` 独立输出车身类型和颜色，不允许其中一个头的稳定状态强迫另一个头分类。Runner 输出单次裁剪观察，轨迹级投票、`unknown` 判定和最终事件发布属于 M3 级联运行时职责。
 

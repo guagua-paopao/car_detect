@@ -97,7 +97,9 @@ public:
         const std::vector<VehicleAttributeCrop>& crops) override {
         std::vector<VehicleAttributeResult> results;
         for (const auto& crop : crops) {
-            if (!crop.crop.valid()) throw std::invalid_argument("invalid crop");
+            if (!crop.crop || !crop.crop->valid()) {
+                throw std::invalid_argument("invalid crop");
+            }
             VehicleAttributeResult result;
             result.metadata.artifact_id = artifact_id_;
             result.metadata.labels_version = labels_version_;
@@ -153,6 +155,14 @@ int main() {
     std::vector<std::uint8_t> pixels(16 * 16 * 3);
     ImageView image{pixels.data(), 16, 16, 3, 16 * 3};
     assert(image.valid());
+    auto owned = std::make_shared<OwnedImage>();
+    owned->pixels = pixels;
+    owned->width = 16;
+    owned->height = 16;
+    owned->channels = 3;
+    owned->row_stride_bytes = 16 * 3;
+    assert(owned->valid());
+    assert(owned->view().valid());
 
     FakeDetectionRunner detector;
     assert(detector.initialize(*registry.find(VehicleModelRole::Detection), error));
@@ -172,7 +182,7 @@ int main() {
     assert(attributes.initialize(
         *registry.find(VehicleModelRole::Attributes), error));
     VehicleAttributeCrop crop;
-    crop.crop = image;
+    crop.crop = owned;
     crop.camera_id = "gate_01";
     crop.run_id = "run_01";
     crop.run_generation = 7;
