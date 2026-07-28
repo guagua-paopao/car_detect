@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://car-detect.local/schemas/model_registry.v1.schema.json",
+  "title": "VCAS Model Registry v1",
+  "description": "Versioned delivery contract for vehicle detection and attribute models. Planned entries do not claim that model files exist.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "registry_version",
+    "labels_version",
+    "created_at",
+    "target",
+    "artifacts"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "registry_version": {
+      "type": "string",
+      "pattern": "^vehicle-model-registry-v[0-9]+$"
+    },
+    "labels_version": {
+      "type": "string",
+      "pattern": "^vehicle-labels-v[0-9]+$"
+    },
+    "created_at": {"type": "string", "format": "date-time"},
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "backend", "engine_portability"],
+      "properties": {
+        "os": {"const": "windows"},
+        "backend": {"const": "tensorrt"},
+        "engine_portability": {"const": "target_host_only"}
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {"$ref": "#/$defs/artifact"}
+    }
+  },
+  "$defs": {
+    "safe_path": {
+      "type": "string",
+      "pattern": "^(?![A-Za-z]:)(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    },
+    "nullable_sha256": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      ]
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_id",
+        "role",
+        "delivery_status",
+        "architecture",
+        "labels_version",
+        "input",
+        "output_names",
+        "deployment",
+        "files",
+        "provenance"
+      ],
+      "properties": {
+        "artifact_id": {
+          "type": "string",
+          "pattern": "^vehicle-(?:det|attr)-v[0-9]+$"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["detection", "attributes"]
+        },
+        "delivery_status": {
+          "type": "string",
+          "enum": [
+            "planned",
+            "onnx_validated",
+            "engine_validated",
+            "deployed",
+            "blocked"
+          ]
+        },
+        "architecture": {"type": "string", "minLength": 1, "maxLength": 160},
+        "labels_version": {
+          "type": "string",
+          "pattern": "^vehicle-labels-v[0-9]+$"
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "width",
+            "height",
+            "channels",
+            "layout",
+            "color_order",
+            "dtype"
+          ],
+          "properties": {
+            "width": {"type": "integer", "minimum": 1, "maximum": 4096},
+            "height": {"type": "integer", "minimum": 1, "maximum": 4096},
+            "channels": {"const": 3},
+            "layout": {"const": "NCHW"},
+            "color_order": {"const": "RGB"},
+            "dtype": {"const": "float32"}
+          }
+        },
+        "output_names": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["vehicle_detections", "body_type", "color"]
+          }
+        },
+        "deployment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["backend", "precision", "max_batch", "target_os"],
+          "properties": {
+            "backend": {"const": "tensorrt"},
+            "precision": {
+              "type": "string",
+              "enum": ["fp32", "fp16", "int8"]
+            },
+            "max_batch": {"type": "integer", "minimum": 1, "maximum": 128},
+            "target_os": {"const": "windows"}
+          }
+        },
+        "files": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "onnx_path",
+            "engine_path",
+            "onnx_sha256",
+            "engine_sha256"
+          ],
+          "properties": {
+            "onnx_path": {
+              "allOf": [
+                {"$ref": "#/$defs/safe_path"},
+                {"type": "string", "pattern": "\\.onnx$"}
+              ]
+            },
+            "engine_path": {
+              "allOf": [
+                {"$ref": "#/$defs/safe_path"},
+                {"type": "string", "pattern": "\\.engine$"}
+              ]
+            },
+            "onnx_sha256": {"$ref": "#/$defs/nullable_sha256"},
+            "engine_sha256": {"$ref": "#/$defs/nullable_sha256"}
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dataset_version",
+            "training_run_id",
+            "code_commit",
+            "model_card_path",
+            "metrics_path"
+          ],
+          "properties": {
+            "dataset_version": {
+              "type": ["string", "null"],
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "training_run_id": {
+              "type": ["string", "null"],
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "code_commit": {
+              "oneOf": [
+                {"type": "null"},
+                {"type": "string", "pattern": "^[a-f0-9]{40}$"}
+              ]
+            },
+            "model_card_path": {
+              "oneOf": [
+                {"type": "null"},
+                {"$ref": "#/$defs/safe_path"}
+              ]
+            },
+            "metrics_path": {
+              "oneOf": [
+                {"type": "null"},
+                {"$ref": "#/$defs/safe_path"}
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -20,6 +20,11 @@
 | VCAS-DATA-002 | 未批准来源不得进入训练、验证或测试 | in_progress | Dataset Manifest `sources` | Manifest Validator | 许可门禁负向测试 |
 | VCAS-DATA-003 | 摄像头、视频和轨迹分组不得跨 Split | verified | `split_policy.group_keys` | Manifest Validator | 泄漏负向测试 |
 | VCAS-DATA-004 | 样本文件、来源和标签版本必须可追溯 | verified | Dataset Manifest v1 | Manifest Validator | Manifest 示例与契约测试 |
+| VCAS-MODEL-001 | 一级检测与二级属性使用独立强类型 Runner | verified | `vehicle_model_contract.h` | Detection/Attribute Runner 接口 | C++ `vehicle_model_contract_test` |
+| VCAS-MODEL-002 | 模型角色、输入、输出、精度和目标平台必须版本化 | verified | Model Registry v1 | Registry Validator | `model_registry_contract_test.py` |
+| VCAS-MODEL-003 | 异步模型结果保留 Artifact、标签、Run generation 和序列上下文 | verified | Runner Request/Result | M2 C++ 契约 | C++ Fake Runner 往返测试 |
+| VCAS-MODEL-004 | 未完成校验和及来源证据的模型不得声明已部署 | verified | `delivery_status`、SHA256、provenance | Registry Validator | 虚假部署状态负向测试 |
+| VCAS-MODEL-005 | ONNX 跨环境交付，TensorRT Engine 在目标 Windows 主机构建 | in_progress | Registry `target`、文件字段 | 计划：TensorRT Adapter | 计划：ONNX/TRT 精度回归 |
 
 ## 更新规则
 

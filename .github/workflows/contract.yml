@@ -20,6 +20,16 @@ jobs:
         run: python tests/vehicle_contract_test.py
       - name: Validate vehicle M1 dataset contracts
         run: python tests/dataset_manifest_contract_test.py
+      - name: Validate vehicle M2 model registry
+        run: python tests/model_registry_contract_test.py
+      - name: Compile vehicle M2 C++ contracts
+        shell: bash
+        run: |
+          g++ -std=c++17 -Wall -Wextra -pedantic -Iinclude \
+            tests/vehicle_model_contract_test.cpp \
+            src/server/vehicle_model_contract.cpp \
+            -o vehicle_model_contract_test
+          ./vehicle_model_contract_test
       - name: Validate PowerShell acceptance scripts
         shell: pwsh
         run: |

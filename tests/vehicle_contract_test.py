@@ -83,6 +83,15 @@ def main() -> None:
         raise AssertionError("runtime config labels_version must match the canonical labels")
     if body_labels != labels["body_types"] or color_labels != labels["colors"]:
         raise AssertionError("runtime label lists must match the canonical labels")
+    versions = example["model_versions"]
+    if versions["config"] != config["config_version"]:
+        raise AssertionError("event example config version must match runtime config")
+    if versions["labels"] != labels["labels_version"]:
+        raise AssertionError("event example labels version must match canonical labels")
+    if versions["detector"] != config["models"]["vehicle_detector"]["artifact"]:
+        raise AssertionError("event detector version must match runtime model selection")
+    if versions["attribute"] != config["models"]["vehicle_attribute"]["artifact"]:
+        raise AssertionError("event attribute version must match runtime model selection")
     schema_body_labels = schema["$defs"]["body_type_classification"]["properties"]["label"]["enum"]
     schema_color_labels = schema["$defs"]["color_classification"]["properties"]["label"]["enum"]
     if body_labels != schema_body_labels:
@@ -135,6 +144,7 @@ def main() -> None:
         "docs/TRACEABILITY.md",
         "docs/development/VCAS_M0_BASELINE.md",
         "docs/development/VCAS_M1_DATA_SPEC.md",
+        "docs/development/VCAS_M2_MODEL_INTERFACES.md",
     ):
         if not (ROOT / relative).is_file():
             raise AssertionError(f"missing traceability document: {relative}")
