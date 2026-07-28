@@ -470,6 +470,7 @@ std::shared_ptr<const OwnedImage> VehicleCropQualityGate::copyCrop(
     crop->width = width;
     crop->height = height;
     crop->channels = frame.channels;
+    crop->pixel_format = frame.pixel_format;
     crop->row_stride_bytes =
         static_cast<std::size_t>(width) * static_cast<std::size_t>(frame.channels);
     crop->pixels.resize(

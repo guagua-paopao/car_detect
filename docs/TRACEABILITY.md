@@ -25,6 +25,9 @@
 | VCAS-MODEL-003 | 异步模型结果保留 Artifact、标签、Run generation 和序列上下文 | verified | Runner Request/Result | M2 C++ 契约 | C++ Fake Runner 往返测试 |
 | VCAS-MODEL-004 | 未完成校验和及来源证据的模型不得声明已部署 | verified | `delivery_status`、SHA256、provenance | Registry Validator | 虚假部署状态负向测试 |
 | VCAS-MODEL-005 | ONNX 跨环境交付，TensorRT Engine 在目标 Windows 主机构建 | in_progress | Registry `target`、文件字段 | 计划：TensorRT Adapter | 计划：ONNX/TRT 精度回归 |
+| VCAS-MODEL-006 | Detection/Attribute Adapter 必须使用真实 TensorRT/CUDA 执行路径 | verified | TensorRT Adapter Options | `vehicle_tensorrt_adapters.cpp` | MSVC/TRT 编译链接与门禁测试 |
+| VCAS-MODEL-007 | Engine 反序列化前必须匹配 Registry SHA256 | verified | `engine_sha256` | OpenSSL SHA256 Gate | 缺失文件和错误状态测试 |
+| VCAS-MODEL-008 | ONNX/TRT 指标绝对下降不得超过 0.5 个百分点 | in_progress | Metric Compare Gate | `compare_model_metrics.py` | 门禁单测通过；真实报告缺失 |
 | VCAS-RUNTIME-001 | 检测和属性结果必须抑制旧 Run 与旧序列 | verified | `run_generation`、frame/crop sequence | M3 Tracker 与 Aggregator | 旧代际和旧序列负向测试 |
 | VCAS-RUNTIME-002 | 异步属性裁剪必须保证像素生命周期安全 | verified | `shared_ptr<const OwnedImage>` | M2/M3 图像契约 | 拥有型裁剪复制与批次测试 |
 | VCAS-RUNTIME-003 | 属性过载优先保留高质量、更新的 Track 候选 | verified | Queue Metrics | M3 Attribute Queue | 容量淘汰与质量排序测试 |

@@ -86,6 +86,7 @@ qt_client/    Qt 管理客户端
 - [数据来源与许可台账](docs/data/LICENSE_LEDGER.md)
 - [车辆模型接口](docs/models/MODEL_INTERFACE.md)
 - [模型注册表](models/manifests/model_registry.v1.json)
+- [模型交付回补状态](docs/models/MODEL_DELIVERY_STATUS.md)
 - [车辆级联运行时](docs/runtime/VEHICLE_CASCADE_RUNTIME.md)
 - [现有架构参考](docs/ARCHITECTURE.md)
 - [Camera API](docs/CAMERA_FRAME_TASK_API.md)

@@ -76,6 +76,7 @@ TensorRT Engine 只在目标 Windows 主机生成。跨环境交付边界是 ONN
 ## 6. 当前限制
 
 - 没有真实 ONNX、TensorRT Engine、模型卡或指标文件。
-- 没有实现具体 TensorRT Detection/Attribute Adapter。
-- 没有实现属性微批队列、轨迹去重和结果融合。
-- 上述内容分别由训练阶段和 M3 级联运行时完成。
+- Detection/Attribute TensorRT Adapter 和 M3 属性微批、轨迹去重、结果融合已经实现。
+- Adapter 的 `artifact_root` 用于解析 Registry 内的项目相对模型路径；TensorRT 实际 Tensor 名称由 Adapter Options 配置，Registry 的 `output_names` 保持业务输出契约。
+- Adapter 已在目标机工具链完成编译、链接和失败关闭验证，但真实 Engine 推理仍等待训练产物。
+- 详细交付阻塞和解阻顺序见 `MODEL_DELIVERY_STATUS.md`。

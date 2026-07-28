@@ -9,6 +9,11 @@
 
 namespace yolo11_server {
 
+enum class ImagePixelFormat {
+    Bgr8,
+    Rgb8,
+};
+
 enum class VehicleModelRole {
     Unknown,
     Detection,
@@ -65,6 +70,7 @@ struct ImageView {
     int height = 0;
     int channels = 0;
     std::size_t row_stride_bytes = 0;
+    ImagePixelFormat pixel_format = ImagePixelFormat::Bgr8;
 
     bool valid() const noexcept;
 };
@@ -75,6 +81,7 @@ struct OwnedImage {
     int height = 0;
     int channels = 0;
     std::size_t row_stride_bytes = 0;
+    ImagePixelFormat pixel_format = ImagePixelFormat::Bgr8;
 
     bool valid() const noexcept;
     ImageView view() const noexcept;

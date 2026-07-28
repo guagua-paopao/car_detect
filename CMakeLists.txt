@@ -149,6 +149,13 @@ target_link_libraries(camera_inference_pool PUBLIC
 add_library(vehicle_model_contract STATIC src/server/vehicle_model_contract.cpp)
 target_include_directories(vehicle_model_contract PUBLIC "${PROJECT_INCLUDE_DIR}")
 
+add_library(vehicle_tensorrt_adapters STATIC src/server/vehicle_tensorrt_adapters.cpp)
+target_include_directories(vehicle_tensorrt_adapters PUBLIC
+    "${PROJECT_INCLUDE_DIR}" "${TENSORRT_ROOT}/include" "${YOLO11_CUDA_ROOT}/include")
+target_link_libraries(vehicle_tensorrt_adapters PUBLIC
+    vehicle_model_contract OpenSSL::Crypto
+    "${NVINFER_LIB}" "${NVINFER_PLUGIN_LIB}" "${CUDART_LIB}")
+
 add_library(vehicle_cascade_core STATIC src/business/vehicle_cascade_runtime.cpp)
 target_include_directories(vehicle_cascade_core PUBLIC "${PROJECT_INCLUDE_DIR}")
 target_link_libraries(vehicle_cascade_core PUBLIC vehicle_model_contract)
@@ -246,10 +253,34 @@ target_include_directories(vehicle_model_contract_test PRIVATE "${PROJECT_INCLUD
 target_link_libraries(vehicle_model_contract_test PRIVATE vehicle_model_contract)
 add_test(NAME vehicle_model_contract_test COMMAND vehicle_model_contract_test)
 
+add_executable(vehicle_tensorrt_adapter_contract_test
+    tests/vehicle_tensorrt_adapter_contract_test.cpp)
+target_include_directories(vehicle_tensorrt_adapter_contract_test PRIVATE
+    "${PROJECT_INCLUDE_DIR}")
+target_link_libraries(vehicle_tensorrt_adapter_contract_test PRIVATE
+    vehicle_tensorrt_adapters)
+add_test(
+    NAME vehicle_tensorrt_adapter_contract_test
+    COMMAND vehicle_tensorrt_adapter_contract_test)
+
 add_executable(vehicle_cascade_runtime_test tests/vehicle_cascade_runtime_test.cpp)
 target_include_directories(vehicle_cascade_runtime_test PRIVATE "${PROJECT_INCLUDE_DIR}")
 target_link_libraries(vehicle_cascade_runtime_test PRIVATE vehicle_cascade_core)
 add_test(NAME vehicle_cascade_runtime_test COMMAND vehicle_cascade_runtime_test)
+
+# These contract tests intentionally use assert for both invocation and
+# verification. Keep assertions enabled in Release builds so the tests cannot
+# silently skip their checks when NDEBUG is defined by the build type.
+foreach(vehicle_contract_test IN ITEMS
+    vehicle_model_contract_test
+    vehicle_tensorrt_adapter_contract_test
+    vehicle_cascade_runtime_test)
+    if(MSVC)
+        target_compile_options(${vehicle_contract_test} PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(${vehicle_contract_test} PRIVATE -UNDEBUG)
+    endif()
+endforeach()
 
 add_executable(app_config_runtime_test tests/app_config_runtime_test.cpp)
 target_include_directories(app_config_runtime_test PRIVATE "${PROJECT_INCLUDE_DIR}")
