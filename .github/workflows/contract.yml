@@ -16,6 +16,8 @@ jobs:
         run: python tools/qt_demo_contract_test.py
       - name: Validate Web Admin parity and security
         run: python tests/web_admin_contract_test.py
+      - name: Validate vehicle M0 contracts
+        run: python tests/vehicle_contract_test.py
       - name: Validate PowerShell acceptance scripts
         shell: pwsh
         run: |

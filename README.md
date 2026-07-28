@@ -79,6 +79,9 @@ qt_client/    Qt 管理客户端
 
 - [项目范围](docs/PROJECT_SCOPE.md)
 - [基线导入记录](docs/BASELINE_IMPORT.md)
+- [需求与代码追溯矩阵](docs/TRACEABILITY.md)
+- [架构决策记录](docs/DECISIONS.md)
+- [阶段开发记录](docs/development/README.md)
 - [现有架构参考](docs/ARCHITECTURE.md)
 - [Camera API](docs/CAMERA_FRAME_TASK_API.md)
 - [部署、监控、故障与回滚](docs/CAMERA_FRAME_TASK_OPERATIONS.md)
@@ -92,6 +95,8 @@ qt_client/    Qt 管理客户端
 4. M3：实现车辆跟踪、裁剪质量门控和轨迹级融合。
 5. M4：实现车辆结果表、事件、快照与 API。
 6. M5：完成目标机 TensorRT、双路性能、8 小时稳定性和回滚验收。
+
+每个阶段必须同步更新阶段记录、追溯矩阵、接口 Schema、配置版本和验证证据。破坏性接口变更必须升版，不能覆盖已经归档的 Schema。
 
 ## 构建环境
 

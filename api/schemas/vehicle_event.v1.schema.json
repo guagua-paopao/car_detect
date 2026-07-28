@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://car-detect.local/schemas/vehicle_event.v1.schema.json",
+  "title": "Vehicle Passage Event v1",
+  "description": "Track-level vehicle result used by query APIs and reliable HTTP callbacks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "event_kind",
+    "camera_id",
+    "run_id",
+    "track_id",
+    "occurred_at_ms",
+    "vehicle_class",
+    "attributes",
+    "model_versions"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "event_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,160}$"},
+    "event_kind": {"const": "vehicle_passage"},
+    "camera_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,160}$"},
+    "run_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,160}$"},
+    "track_id": {"type": "integer", "minimum": 0},
+    "occurred_at_ms": {"type": "integer", "minimum": 0},
+    "vehicle_class": {
+      "$ref": "#/$defs/vehicle_classification"
+    },
+    "attributes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["body_type", "color"],
+      "properties": {
+        "body_type": {"$ref": "#/$defs/body_type_classification"},
+        "color": {"$ref": "#/$defs/color_classification"}
+      }
+    },
+    "model_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["detector", "attribute", "labels", "config"],
+      "properties": {
+        "detector": {"type": "string", "minLength": 1, "maxLength": 160},
+        "attribute": {"type": "string", "minLength": 1, "maxLength": 160},
+        "labels": {"type": "string", "minLength": 1, "maxLength": 160},
+        "config": {"type": "string", "minLength": 1, "maxLength": 160}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "snapshot_url": {
+          "type": "string",
+          "pattern": "^/api/v1/vehicle-events/[A-Za-z0-9_-]+/snapshot$"
+        },
+        "frame_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,160}$"},
+        "crop_quality": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "not_scheduled",
+            "pending",
+            "delivering",
+            "delivered",
+            "retry",
+            "dead_letter"
+          ]
+        }
+      }
+    },
+    "created_at_ms": {"type": "integer", "minimum": 0}
+  },
+  "$defs": {
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "vehicle_classification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "confidence"],
+      "properties": {
+        "label": {
+          "type": "string",
+          "enum": ["car", "bus", "truck", "motorcycle", "vehicle", "other"]
+        },
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "body_type_classification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "confidence", "stable", "samples_used"],
+      "properties": {
+        "label": {
+          "type": "string",
+          "enum": [
+            "sedan",
+            "suv",
+            "mpv",
+            "van",
+            "pickup",
+            "bus",
+            "light_truck",
+            "heavy_truck",
+            "other",
+            "unknown"
+          ]
+        },
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "stable": {"type": "boolean"},
+        "samples_used": {"type": "integer", "minimum": 0, "maximum": 64}
+      }
+    },
+    "color_classification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "confidence", "stable", "samples_used"],
+      "properties": {
+        "label": {
+          "type": "string",
+          "enum": [
+            "black",
+            "white",
+            "silver_gray",
+            "red",
+            "blue",
+            "green",
+            "yellow_orange",
+            "brown_beige",
+            "other",
+            "unknown"
+          ]
+        },
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "stable": {"type": "boolean"},
+        "samples_used": {"type": "integer", "minimum": 0, "maximum": 64}
+      }
+    }
+  }
+}

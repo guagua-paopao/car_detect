@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "event_id": "ve_gate_01_42",
+  "event_kind": "vehicle_passage",
+  "camera_id": "gate_01",
+  "run_id": "cr_example",
+  "track_id": 42,
+  "occurred_at_ms": 1785200000000,
+  "vehicle_class": {
+    "label": "car",
+    "confidence": 0.96
+  },
+  "attributes": {
+    "body_type": {
+      "label": "suv",
+      "confidence": 0.91,
+      "stable": true,
+      "samples_used": 4
+    },
+    "color": {
+      "label": "white",
+      "confidence": 0.88,
+      "stable": true,
+      "samples_used": 4
+    }
+  },
+  "model_versions": {
+    "detector": "vehicle-det-v1",
+    "attribute": "vehicle-attr-v1",
+    "labels": "vehicle-labels-v1",
+    "config": "vehicle-analytics-m0"
+  },
+  "evidence": {
+    "snapshot_url": "/api/v1/vehicle-events/ve_gate_01_42/snapshot",
+    "frame_id": "vf_gate_01_000042",
+    "crop_quality": 0.93
+  },
+  "delivery": {
+    "status": "pending"
+  },
+  "created_at_ms": 1785200000120
+}

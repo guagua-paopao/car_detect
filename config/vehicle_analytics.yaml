@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0",
+  "config_version": "vehicle-analytics-m0",
+  "models": {
+    "vehicle_detector": {
+      "artifact": "vehicle-det-v1",
+      "engine_path": "./engines/vehicle-det-v1.engine",
+      "input_size": 960,
+      "workers": 2
+    },
+    "vehicle_attribute": {
+      "artifact": "vehicle-attr-v1",
+      "engine_path": "./engines/vehicle-attr-v1.engine",
+      "input_size": 224,
+      "workers": 1,
+      "max_batch": 16
+    }
+  },
+  "vehicle_analytics": {
+    "detection_fps": 8,
+    "min_confirm_hits": 3,
+    "min_crop_width_px": 96,
+    "attribute_vote_samples": 3,
+    "type_threshold": 0.75,
+    "color_threshold": 0.70,
+    "track_timeout_ms": 1500,
+    "publish_unknown_on_exit": true,
+    "body_types": [
+      "sedan",
+      "suv",
+      "mpv",
+      "van",
+      "pickup",
+      "bus",
+      "light_truck",
+      "heavy_truck",
+      "other",
+      "unknown"
+    ],
+    "colors": [
+      "black",
+      "white",
+      "silver_gray",
+      "red",
+      "blue",
+      "green",
+      "yellow_orange",
+      "brown_beige",
+      "other",
+      "unknown"
+    ]
+  },
+  "queues": {
+    "detection_pending_per_camera": 1,
+    "attribute_max_pending": 128,
+    "attribute_pending_per_track": 1
+  }
+}
