@@ -1,6 +1,8 @@
 {
   "schema_version": "1.0",
   "config_version": "vehicle-analytics-m0",
+  "labels_version": "vehicle-labels-v1",
+  "labels_path": "./config/vehicle_labels.v1.json",
   "models": {
     "vehicle_detector": {
       "artifact": "vehicle-det-v1",

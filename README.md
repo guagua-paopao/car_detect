@@ -82,6 +82,8 @@ qt_client/    Qt 管理客户端
 - [需求与代码追溯矩阵](docs/TRACEABILITY.md)
 - [架构决策记录](docs/DECISIONS.md)
 - [阶段开发记录](docs/development/README.md)
+- [数据标注规范](docs/data/ANNOTATION_GUIDE.md)
+- [数据来源与许可台账](docs/data/LICENSE_LEDGER.md)
 - [现有架构参考](docs/ARCHITECTURE.md)
 - [Camera API](docs/CAMERA_FRAME_TASK_API.md)
 - [部署、监控、故障与回滚](docs/CAMERA_FRAME_TASK_OPERATIONS.md)

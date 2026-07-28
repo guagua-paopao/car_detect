@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "api" / "schemas" / "vehicle_event.v1.schema.json"
 EXAMPLE_PATH = ROOT / "api" / "examples" / "vehicle_passage.v1.json"
 CONFIG_PATH = ROOT / "config" / "vehicle_analytics.yaml"
+LABELS_PATH = ROOT / "config" / "vehicle_labels.v1.json"
 
 
 def load_json(path: Path) -> dict:
@@ -59,6 +60,7 @@ def main() -> None:
     # JSON is a valid YAML 1.2 subset. Keeping the M0 config JSON-compatible
     # gives CI a dependency-free parser while yaml-cpp can consume the file.
     config = load_json(CONFIG_PATH)
+    labels = load_json(LABELS_PATH)
 
     if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
         raise AssertionError("vehicle event schema must use JSON Schema 2020-12")
@@ -77,6 +79,10 @@ def main() -> None:
 
     body_labels = config["vehicle_analytics"]["body_types"]
     color_labels = config["vehicle_analytics"]["colors"]
+    if config["labels_version"] != labels["labels_version"]:
+        raise AssertionError("runtime config labels_version must match the canonical labels")
+    if body_labels != labels["body_types"] or color_labels != labels["colors"]:
+        raise AssertionError("runtime label lists must match the canonical labels")
     schema_body_labels = schema["$defs"]["body_type_classification"]["properties"]["label"]["enum"]
     schema_color_labels = schema["$defs"]["color_classification"]["properties"]["label"]["enum"]
     if body_labels != schema_body_labels:
@@ -128,6 +134,7 @@ def main() -> None:
         "docs/DECISIONS.md",
         "docs/TRACEABILITY.md",
         "docs/development/VCAS_M0_BASELINE.md",
+        "docs/development/VCAS_M1_DATA_SPEC.md",
     ):
         if not (ROOT / relative).is_file():
             raise AssertionError(f"missing traceability document: {relative}")
