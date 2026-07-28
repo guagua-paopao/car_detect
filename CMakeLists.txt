@@ -146,6 +146,9 @@ target_include_directories(camera_inference_pool PUBLIC "${PROJECT_INCLUDE_DIR}"
 target_link_libraries(camera_inference_pool PUBLIC
     app_support spdlog::spdlog ${OpenCV_LIBS} Threads::Threads)
 
+add_library(vehicle_model_contract STATIC src/server/vehicle_model_contract.cpp)
+target_include_directories(vehicle_model_contract PUBLIC "${PROJECT_INCLUDE_DIR}")
+
 add_library(camera_algorithm_runtime STATIC src/server/camera_algorithm_processor.cpp)
 target_include_directories(camera_algorithm_runtime PUBLIC "${PROJECT_INCLUDE_DIR}" ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(camera_algorithm_runtime PUBLIC
@@ -234,6 +237,11 @@ add_custom_command(TARGET four_stage_worker POST_BUILD
         $<TARGET_FILE:myplugins> $<TARGET_FILE_DIR:four_stage_worker>)
 
 enable_testing()
+add_executable(vehicle_model_contract_test tests/vehicle_model_contract_test.cpp)
+target_include_directories(vehicle_model_contract_test PRIVATE "${PROJECT_INCLUDE_DIR}")
+target_link_libraries(vehicle_model_contract_test PRIVATE vehicle_model_contract)
+add_test(NAME vehicle_model_contract_test COMMAND vehicle_model_contract_test)
+
 add_executable(app_config_runtime_test tests/app_config_runtime_test.cpp)
 target_include_directories(app_config_runtime_test PRIVATE "${PROJECT_INCLUDE_DIR}")
 target_link_libraries(app_config_runtime_test PRIVATE app_support camera_capture_runtime)

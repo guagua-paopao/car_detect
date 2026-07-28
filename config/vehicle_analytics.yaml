@@ -1,17 +1,29 @@
 {
   "schema_version": "1.0",
-  "config_version": "vehicle-analytics-m0",
+  "config_version": "vehicle-analytics-m2",
   "labels_version": "vehicle-labels-v1",
   "labels_path": "./config/vehicle_labels.v1.json",
+  "model_registry_path": "./models/manifests/model_registry.v1.json",
   "models": {
     "vehicle_detector": {
       "artifact": "vehicle-det-v1",
+      "role": "detection",
+      "delivery_status": "planned",
+      "backend": "tensorrt",
+      "precision": "fp16",
+      "onnx_path": "./models/vehicle-det-v1.onnx",
       "engine_path": "./engines/vehicle-det-v1.engine",
       "input_size": 960,
+      "max_batch": 1,
       "workers": 2
     },
     "vehicle_attribute": {
       "artifact": "vehicle-attr-v1",
+      "role": "attributes",
+      "delivery_status": "planned",
+      "backend": "tensorrt",
+      "precision": "fp16",
+      "onnx_path": "./models/vehicle-attr-v1.onnx",
       "engine_path": "./engines/vehicle-attr-v1.engine",
       "input_size": 224,
       "workers": 1,

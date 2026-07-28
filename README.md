@@ -84,6 +84,8 @@ qt_client/    Qt 管理客户端
 - [阶段开发记录](docs/development/README.md)
 - [数据标注规范](docs/data/ANNOTATION_GUIDE.md)
 - [数据来源与许可台账](docs/data/LICENSE_LEDGER.md)
+- [车辆模型接口](docs/models/MODEL_INTERFACE.md)
+- [模型注册表](models/manifests/model_registry.v1.json)
 - [现有架构参考](docs/ARCHITECTURE.md)
 - [Camera API](docs/CAMERA_FRAME_TASK_API.md)
 - [部署、监控、故障与回滚](docs/CAMERA_FRAME_TASK_OPERATIONS.md)

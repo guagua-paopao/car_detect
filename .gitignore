@@ -12,7 +12,9 @@
 /engines/*.onnx
 /engines/*.pt
 /engines/*.pth
-/models/
+/models/*
+!/models/manifests/
+!/models/manifests/*.json
 /datasets/
 
 # Dataset payloads stay outside Git; only versioned manifests are tracked.
