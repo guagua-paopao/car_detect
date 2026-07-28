@@ -207,6 +207,7 @@ ImageView OwnedImage::view() const noexcept {
         height,
         channels,
         row_stride_bytes,
+        pixel_format,
     };
 }
 

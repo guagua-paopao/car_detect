@@ -37,14 +37,26 @@
 - [x] M0 车辆事件契约和 M1 数据契约回归
 - [x] CI 增加 Python 注册表测试和 C++ 编译运行测试
 
+### M3 完成后的模型交付回补
+
+- [x] 实现真实 TensorRT Detection Adapter 源码：Engine 反序列化、CUDA 推理、YOLO 解码和 NMS
+- [x] 实现真实 TensorRT Attribute Adapter 源码：动态 Batch、双头输出和 Softmax
+- [x] 使用目标机 MSVC、CUDA 13.3、TensorRT 10.16 编译链接
+- [x] Engine 装载前强制校验 Registry 状态与 SHA256
+- [x] 增加 Engine 构建脚本、资产审计和 0.5 个百分点精度回归门禁
+- [ ] 使用真实 Detection/Attribute Engine 完成固定输入推理
+- [ ] 填写真实 ONNX/Engine SHA256、模型卡和指标
+
+当前资产阻塞详情见 `docs/models/MODEL_DELIVERY_STATUS.md`。
+
 ## M2 退出条件
 
 - [x] 强类型 Detection/Attribute Runner 接口完成
 - [x] 内存模型注册表及 Artifact 校验完成
 - [x] Model Registry v1 Schema、计划态 Manifest 和无依赖校验器完成
 - [x] Runtime Config、事件示例和模型版本保持一致
-- [ ] Detection TensorRT Adapter 完成并通过固定输入测试
-- [ ] Attribute TensorRT Adapter 完成批量输入与双头输出测试
+- [ ] Detection TensorRT Adapter 使用真实 Engine 通过固定输入测试
+- [ ] Attribute TensorRT Adapter 使用真实 Engine 通过批量输入与双头输出测试
 - [ ] 真实 ONNX 产物、SHA256、模型卡和指标记录完成
 - [ ] 目标 Windows Engine 构建及 ONNX/TensorRT 精度回归完成
 

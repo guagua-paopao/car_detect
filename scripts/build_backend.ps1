@@ -85,6 +85,7 @@ $build = @("--build", $BuildPath, "--config", "Release", "--target",
     "camera_task_http_contract_test",
     "people_flow_compatibility_contract_test",
     "pose_engine_smoke", "pose_engine_benchmark",
+    "vehicle_tensorrt_adapter_contract_test",
     "rtsp_capture_smoke", "pose_rtsp_interop_smoke")
 if ($CleanFirst) { $build += "--clean-first" }
 & $CMakeExe @build

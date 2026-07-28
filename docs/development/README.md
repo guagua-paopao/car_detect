@@ -17,6 +17,7 @@
 | M1 数据规范 | in_progress | [VCAS_M1_DATA_SPEC.md](VCAS_M1_DATA_SPEC.md) | 标签映射、许可台账、Manifest 与试标规范 |
 | M2 模型接口 | in_progress | [VCAS_M2_MODEL_INTERFACES.md](VCAS_M2_MODEL_INTERFACES.md) | Detection/Attribute Runner、模型注册表 |
 | M3 级联运行时 | completed | [VCAS_M3_CASCADE_RUNTIME.md](VCAS_M3_CASCADE_RUNTIME.md) | 跟踪、门控、属性队列、轨迹融合 |
+| M2R 模型交付回补 | awaiting_assets | [VCAS_M2R_MODEL_DELIVERY.md](VCAS_M2R_MODEL_DELIVERY.md) | 真实 TensorRT Adapter、Engine 构建、SHA256 与精度门禁 |
 | M4 存储与 API | planned | 待创建 | 数据迁移、车辆事件 API、快照和回调 |
 | M5 部署与验收 | planned | 待创建 | TensorRT、性能、稳定性、故障和回滚报告 |
 
