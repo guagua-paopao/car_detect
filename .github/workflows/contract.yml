@@ -24,6 +24,8 @@ jobs:
         run: python tests/model_registry_contract_test.py
       - name: Validate vehicle M3 cascade contracts
         run: python tests/vehicle_cascade_contract_test.py
+      - name: Validate vehicle M4 storage and API contracts
+        run: python tests/vehicle_storage_api_contract_test.py
       - name: Validate real TensorRT adapter sources
         run: python tests/vehicle_tensorrt_source_contract_test.py
       - name: Validate model delivery gates

@@ -458,6 +458,25 @@ namespace yolo11_server {
                 config.analysis.supported_algorithms.end()),
             config.analysis.supported_algorithms.end());
 
+        const auto vehicle_analytics = root["vehicle_analytics"];
+        config.vehicle_analytics.enabled = readOrDefault<bool>(
+            vehicle_analytics, "enabled", config.vehicle_analytics.enabled);
+        config.vehicle_analytics.config_path = readOrDefault<std::string>(
+            vehicle_analytics, "config_path",
+            config.vehicle_analytics.config_path);
+        config.vehicle_analytics.model_registry_path =
+            readOrDefault<std::string>(
+                vehicle_analytics, "model_registry_path",
+                config.vehicle_analytics.model_registry_path);
+        config.vehicle_analytics.observation_retention_days =
+            std::clamp(
+                readOrDefault<int>(
+                    vehicle_analytics,
+                    "observation_retention_days",
+                    config.vehicle_analytics.observation_retention_days),
+                1,
+                365);
+
         const auto runtime = root["runtime"];
         config.runtime.unified_camera_pipeline = readOrDefault<bool>(
             runtime, "unified_camera_pipeline",

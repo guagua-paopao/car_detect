@@ -160,6 +160,13 @@ add_library(vehicle_cascade_core STATIC src/business/vehicle_cascade_runtime.cpp
 target_include_directories(vehicle_cascade_core PUBLIC "${PROJECT_INCLUDE_DIR}")
 target_link_libraries(vehicle_cascade_core PUBLIC vehicle_model_contract)
 
+add_library(vehicle_event_persistence STATIC
+    src/business/vehicle_event_publisher.cpp)
+target_include_directories(vehicle_event_persistence PUBLIC
+    "${PROJECT_INCLUDE_DIR}")
+target_link_libraries(vehicle_event_persistence PUBLIC
+    vehicle_cascade_core camera_task_storage OpenSSL::Crypto)
+
 add_library(camera_algorithm_runtime STATIC src/server/camera_algorithm_processor.cpp)
 target_include_directories(camera_algorithm_runtime PUBLIC "${PROJECT_INCLUDE_DIR}" ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(camera_algorithm_runtime PUBLIC
@@ -404,6 +411,17 @@ target_compile_definitions(camera_task_repository_test PRIVATE
     YOLO11_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME camera_task_repository_test COMMAND camera_task_repository_test)
 set_tests_properties(camera_task_repository_test PROPERTIES SKIP_RETURN_CODE 77)
+
+add_executable(vehicle_event_repository_test
+    tests/vehicle_event_repository_test.cpp)
+target_include_directories(vehicle_event_repository_test PRIVATE
+    "${PROJECT_INCLUDE_DIR}")
+target_link_libraries(vehicle_event_repository_test PRIVATE
+    vehicle_event_persistence nlohmann_json::nlohmann_json)
+add_test(NAME vehicle_event_repository_test
+    COMMAND vehicle_event_repository_test)
+set_tests_properties(vehicle_event_repository_test PROPERTIES
+    SKIP_RETURN_CODE 77)
 
 add_executable(camera_frame_extraction_test tests/camera_frame_extraction_test.cpp)
 target_include_directories(camera_frame_extraction_test PRIVATE "${PROJECT_INCLUDE_DIR}" ${OpenCV_INCLUDE_DIRS})

@@ -196,6 +196,14 @@ namespace yolo11_server {
         };
     };
 
+    struct VehicleAnalyticsServiceSection {
+        bool enabled = true;
+        std::string config_path = "./config/vehicle_analytics.yaml";
+        std::string model_registry_path =
+            "./models/manifests/model_registry.v1.json";
+        int observation_retention_days = 7;
+    };
+
     // People Flow -> Camera Run migration switches. R8 makes the unified
     // runtime the default; false retains the release-cycle rollback path
     // without changing the database or public API.
@@ -496,6 +504,7 @@ namespace yolo11_server {
         CameraHubSection camera_hub;
         CameraTasksSection camera_tasks;
         AnalysisSection analysis;
+        VehicleAnalyticsServiceSection vehicle_analytics;
         RuntimeSection runtime;
         CallbackDeliverySection callbacks;
         PeopleFlowSection people_flow;

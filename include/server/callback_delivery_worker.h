@@ -54,9 +54,10 @@ struct CallbackDeliverySnapshot {
     std::string last_error_code;
 };
 
-// PostgreSQL transactional-outbox consumer. Claims use SKIP LOCKED and the
-// monotonically increasing attempt as a fencing token. Delivery is at least
-// once; receivers deduplicate by event_id / Idempotency-Key.
+// PostgreSQL transactional-outbox consumer for immutable vision_events.
+// Claims use SKIP LOCKED and the monotonically increasing attempt as a fencing
+// token. Delivery is at least once; receivers deduplicate by event_id /
+// Idempotency-Key.
 class CallbackDeliveryWorker final {
 public:
     CallbackDeliveryWorker(

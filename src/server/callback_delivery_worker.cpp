@@ -11,7 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include <nlohmann/json.hpp>
 #include <openssl/hmac.h>
 #include <openssl/sha.h>
 #include <spdlog/spdlog.h>
@@ -23,8 +22,6 @@
 
 namespace yolo11_server {
 namespace {
-
-using json = nlohmann::json;
 
 long long wallNowMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -58,38 +55,6 @@ std::string hmacSha256Hex(const std::string& secret, const std::string& value) {
         digest,
         &size);
     return hexBytes(digest, size);
-}
-
-std::string callbackBody(const SecurityAlertEventRecord& alert) {
-    auto payload = json::parse(alert.payload_json, nullptr, false);
-    if (payload.is_discarded() || !payload.is_object()) payload = json::object();
-    json body{
-        { "schema_version", "1.0" },
-        { "event_kind", "algorithm_alert" },
-        { "event_id", alert.event_id },
-        { "task_id", alert.task_id },
-        { "camera_id", alert.task_id },
-        { "run_id", alert.run_id },
-        { "camera_profile", alert.camera_profile },
-        { "event_type", alert.event_type },
-        { "category", alert.category },
-        { "severity", alert.severity },
-        { "confidence", alert.confidence ? json(*alert.confidence) : json(nullptr) },
-        { "track_id", alert.track_id ? json(*alert.track_id) : json(nullptr) },
-        { "occurred_at_ms", alert.occurred_at_ms },
-        { "algorithm", {
-            { "profile", alert.algorithm_profile },
-            { "model", alert.model_name },
-            { "config_version", alert.config_version },
-            { "demo_classifier", alert.demo_classifier }
-        } },
-        { "payload", std::move(payload) },
-        { "created_at_ms", alert.created_at_ms }
-    };
-    if (!alert.evidence_frame_id.empty()) {
-        body["evidence"] = { { "frame_id", alert.evidence_frame_id } };
-    }
-    return body.dump();
 }
 
 long long retryDelayMs(const CallbackDeliverySection& config, int attempt) {
@@ -489,18 +454,18 @@ bool CallbackDeliveryWorker::processOneAt(
     if (!found) return true;
     ++claimed_;
 
-    SecurityAlertEventRecord alert;
-    bool alert_found = false;
-    if (!repository_->getAlert(outbox.event_id, alert, alert_found, error)) {
-        setLastError("CALLBACK_ALERT_READ_FAILED");
+    VisionEventRecord event;
+    bool event_found = false;
+    if (!repository_->getVisionEvent(outbox.event_id, event, event_found, error)) {
+        setLastError("CALLBACK_EVENT_READ_FAILED");
         return false;
     }
 
     const auto profile = profiles_.find(outbox.callback_profile);
-    if (!alert_found || profile == profiles_.end()) {
-        const std::string code = alert_found
+    if (!event_found || profile == profiles_.end()) {
+        const std::string code = event_found
             ? "CALLBACK_PROFILE_NOT_CONFIGURED"
-            : "CALLBACK_ALERT_NOT_FOUND";
+            : "CALLBACK_EVENT_NOT_FOUND";
         if (!repository_->finishCallbackAttempt(
                 outbox.outbox_id,
                 outbox.attempt,
@@ -521,7 +486,7 @@ bool CallbackDeliveryWorker::processOneAt(
     }
 
     const std::string timestamp = std::to_string(now_ms);
-    const std::string body = callbackBody(alert);
+    const std::string body = event.payload_json;
     if (body.size() > static_cast<std::size_t>(
             config_.callbacks.request_body_limit_bytes)) {
         if (!repository_->finishCallbackAttempt(
@@ -550,8 +515,8 @@ bool CallbackDeliveryWorker::processOneAt(
         config_.callbacks.response_body_limit_bytes;
     request.allow_insecure_http = profile->second.allow_insecure_http;
     request.headers = {
-        { "Idempotency-Key", alert.event_id },
-        { "X-Event-Id", alert.event_id },
+        { "Idempotency-Key", event.event_id },
+        { "X-Event-Id", event.event_id },
         { "X-Signature", hmacSha256Hex(
             profile->second.hmac_secret, timestamp + "\n" + body) },
         { "X-Signature-Version", "1" },

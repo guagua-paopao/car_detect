@@ -41,9 +41,18 @@ int main(int argc, char** argv) {
             server.analysis.supported_algorithms ==
                 std::vector<std::string>({
                     "electronic_fence", "people_flow", "pose_action",
-                    "security", "temporal_action"
+                    "security", "temporal_action", "vehicle_attribute",
+                    "vehicle_detection"
                 }),
         "server fixed inference-pool configuration must parse");
+    require(
+        server.vehicle_analytics.enabled &&
+            server.vehicle_analytics.config_path ==
+                "./config/vehicle_analytics.yaml" &&
+            server.vehicle_analytics.model_registry_path ==
+                "./models/manifests/model_registry.v1.json" &&
+            server.vehicle_analytics.observation_retention_days == 7,
+        "server vehicle storage/API configuration must parse");
     require(server.runtime.unified_camera_pipeline &&
             server.runtime.people_flow_compatibility &&
             server.runtime.legacy_people_flow_fallback &&

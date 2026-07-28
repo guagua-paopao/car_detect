@@ -132,6 +132,85 @@ struct SecurityAlertEventRecord {
     long long created_at_ms = 0;
 };
 
+struct VisionEventRecord {
+    std::string event_id;
+    std::string event_kind;
+    std::string task_id;
+    std::string run_id;
+    std::string camera_profile;
+    long long occurred_at_ms = 0;
+    std::string payload_json = "{}";
+    std::string evidence_frame_id;
+    long long created_at_ms = 0;
+};
+
+struct VehicleTrackResultRecord {
+    std::string event_id;
+    std::string task_id;
+    std::string run_id;
+    std::string camera_id;
+    long long track_id = 0;
+    long long first_seen_at_ms = 0;
+    long long last_seen_at_ms = 0;
+    long long occurred_at_ms = 0;
+    std::string vehicle_class;
+    double vehicle_class_confidence = 0.0;
+    std::string body_type = "unknown";
+    double body_type_confidence = 0.0;
+    bool body_type_stable = false;
+    int body_type_samples_used = 0;
+    std::string color = "unknown";
+    double color_confidence = 0.0;
+    bool color_stable = false;
+    int color_samples_used = 0;
+    std::string detector_artifact;
+    std::string attribute_artifact;
+    std::string labels_version;
+    std::string config_version;
+    std::string snapshot_relative_path;
+    std::string evidence_frame_id;
+    double crop_quality = 0.0;
+    std::string finalized_reason = "track_exit";
+    std::string delivery_status = "not_scheduled";
+    long long created_at_ms = 0;
+};
+
+struct VehicleAttributeObservationRecord {
+    std::string observation_id;
+    std::string task_id;
+    std::string run_id;
+    long long track_id = 0;
+    unsigned long long crop_sequence = 0;
+    long long observed_at_ms = 0;
+    double quality_score = 0.0;
+    std::string body_type = "unknown";
+    double body_type_confidence = 0.0;
+    std::string color = "unknown";
+    double color_confidence = 0.0;
+    std::string attribute_artifact;
+    std::string labels_version;
+    long long expires_at_ms = 0;
+};
+
+struct VehicleRealtimeTrackRecord {
+    std::string camera_id;
+    std::string run_id;
+    unsigned long long run_generation = 0;
+    long long track_id = 0;
+    std::string state;
+    long long last_seen_at_ms = 0;
+    std::string vehicle_class;
+    double vehicle_class_confidence = 0.0;
+    std::string body_type = "unknown";
+    double body_type_confidence = 0.0;
+    bool body_type_stable = false;
+    int body_type_samples_used = 0;
+    std::string color = "unknown";
+    double color_confidence = 0.0;
+    bool color_stable = false;
+    int color_samples_used = 0;
+};
+
 struct CallbackOutboxRecord {
     long long outbox_id = 0;
     std::string event_id;

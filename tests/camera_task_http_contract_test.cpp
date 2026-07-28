@@ -118,6 +118,8 @@ int main() {
     config.camera_tasks.postgres_dsn_env = "YOLO11_TEST_POSTGRES_DSN";
     config.camera_tasks.output_dir = pathUtf8(root / "output");
     config.stream.camera_profiles_path = pathUtf8(root / "cameras.yaml");
+    config.vehicle_analytics.model_registry_path =
+        pathUtf8(root / "model_registry.json");
     config.worker.worker_num = 1;
     config.callbacks.enabled = true;
     CallbackProfileSection callback_profile;
@@ -141,7 +143,9 @@ int main() {
     require(database.openFromEnvironment(config.camera_tasks.postgres_dsn_env, error),
         "test PostgreSQL connection must open: " + error);
     require(database.exec(
-        "DROP TABLE IF EXISTS callback_outbox,security_alert_events,camera_idempotency_keys,"
+        "DROP TABLE IF EXISTS callback_outbox,vehicle_attribute_observations,"
+        "vehicle_track_results,security_alert_events,vision_events,"
+        "camera_idempotency_keys,"
         "camera_frames,camera_run_analysis_results,camera_task_runs,camera_tasks,camera_schema_version CASCADE;",
         error), "test PostgreSQL schema reset must succeed: " + error);
 
@@ -160,6 +164,21 @@ int main() {
                  << "    display_name: Disabled\n"
                  << "    transport: tcp\n"
                  << "    enabled: false\n";
+    }
+    {
+        std::ofstream registry(root / "model_registry.json", std::ios::binary);
+        registry
+            << R"({"registry_version":"vehicle-model-registry-v1",)"
+            << R"("labels_version":"vehicle-labels-v1","artifacts":[)"
+            << R"({"artifact_id":"vehicle-det-v1","role":"detection",)"
+            << R"("delivery_status":"planned","deployment":{"backend":"tensorrt",)"
+            << R"("precision":"fp16"},"files":{"onnx_sha256":null,)"
+            << R"("engine_sha256":null}},)"
+            << R"({"artifact_id":"vehicle-attr-v1","role":"attribute",)"
+            << R"("delivery_status":"engine_validated","deployment":{"backend":"tensorrt",)"
+            << R"("precision":"fp16"},"files":{"onnx_sha256":null,)"
+            << R"("engine_sha256":"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz)"
+            << R"(zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"}}]})";
     }
 
     auto repository = std::make_shared<CameraTaskRepository>(config.camera_tasks);
@@ -206,6 +225,33 @@ int main() {
             std::string& runtime_error) {
             output = algorithm_runtime;
             runtime_error.clear();
+            return true;
+        },
+        {},
+        [](const std::string& camera_id,
+           std::vector<VehicleRealtimeTrackRecord>& tracks,
+           long long& generated_at_ms,
+           std::string& realtime_error) {
+            VehicleRealtimeTrackRecord track;
+            track.camera_id = camera_id;
+            track.run_id = "vehicle_realtime_run";
+            track.run_generation = 7;
+            track.track_id = 42;
+            track.state = "ATTR_STABLE";
+            track.last_seen_at_ms = 1785200000100LL;
+            track.vehicle_class = "car";
+            track.vehicle_class_confidence = 0.96;
+            track.body_type = "suv";
+            track.body_type_confidence = 0.91;
+            track.body_type_stable = true;
+            track.body_type_samples_used = 4;
+            track.color = "white";
+            track.color_confidence = 0.88;
+            track.color_stable = true;
+            track.color_samples_used = 4;
+            tracks = {track};
+            generated_at_ms = 1785200000120LL;
+            realtime_error.clear();
             return true;
         });
     require(controller.initialize(error), "HTTP controller must initialize: " + error);
@@ -438,6 +484,96 @@ int main() {
             responseBody(response)["items"][0]["event_id"] == alert.event_id &&
             responseBody(response)["items"][0]["delivery"]["status"] == "not_scheduled",
         "Camera alert query must expose the normalized event and delivery state");
+
+    response = controller.vehicleRealtime(request(), camera_id);
+    require(
+        response.code == 200 &&
+            responseBody(response)["available"] == true &&
+            responseBody(response)["items"].size() == 1 &&
+            responseBody(response)["items"][0]["track_id"] == 42 &&
+            responseBody(response)["items"][0]["attributes"]["color"]["label"] ==
+                "white",
+        "vehicle realtime endpoint must expose injected M3 track state");
+
+    VehicleTrackResultRecord vehicle;
+    vehicle.event_id = "ve_contract_42";
+    vehicle.task_id = camera_id;
+    vehicle.camera_id = camera_id;
+    vehicle.run_id = replacement_run_id;
+    vehicle.track_id = 42;
+    vehicle.first_seen_at_ms = nowMs();
+    vehicle.last_seen_at_ms = vehicle.first_seen_at_ms + 100;
+    vehicle.occurred_at_ms = vehicle.last_seen_at_ms;
+    vehicle.vehicle_class = "car";
+    vehicle.vehicle_class_confidence = 0.96;
+    vehicle.body_type = "suv";
+    vehicle.body_type_confidence = 0.91;
+    vehicle.body_type_stable = true;
+    vehicle.body_type_samples_used = 4;
+    vehicle.color = "white";
+    vehicle.color_confidence = 0.88;
+    vehicle.color_stable = true;
+    vehicle.color_samples_used = 4;
+    vehicle.detector_artifact = "vehicle-det-v1";
+    vehicle.attribute_artifact = "vehicle-attr-v1";
+    vehicle.labels_version = "vehicle-labels-v1";
+    vehicle.config_version = "vehicle-analytics-m4";
+    vehicle.snapshot_relative_path =
+        camera_id + "/" + replacement_run_id + "/vehicle/ve_contract_42.jpg";
+    vehicle.evidence_frame_id = "vf_contract_42";
+    vehicle.crop_quality = 0.93;
+    vehicle.finalized_reason = "stable";
+    vehicle.created_at_ms = vehicle.occurred_at_ms + 1;
+    const auto vehicle_snapshot =
+        root / "output" /
+        std::filesystem::u8path(vehicle.snapshot_relative_path);
+    std::filesystem::create_directories(vehicle_snapshot.parent_path());
+    {
+        std::ofstream jpeg(vehicle_snapshot, std::ios::binary);
+        const unsigned char bytes[]{0xff, 0xd8, 0xff, 0xd9};
+        jpeg.write(
+            reinterpret_cast<const char*>(bytes),
+            static_cast<std::streamsize>(sizeof(bytes)));
+    }
+    require(
+        repository->publishVehicleEvent(
+            vehicle, enabled.id, {}, alert_code, error),
+        "vehicle HTTP fixture must persist: " + error);
+    response = controller.listVehicleEvents(
+        request(
+            {},
+            true,
+            "?occurred_from_ms=" +
+                std::to_string(vehicle.occurred_at_ms) +
+                "&occurred_to_ms=" +
+                std::to_string(vehicle.occurred_at_ms)),
+        camera_id);
+    require(
+        response.code == 200 &&
+            responseBody(response)["items"].size() == 1 &&
+            responseBody(response)["items"][0]["event_id"] ==
+                vehicle.event_id,
+        "vehicle event history must support bounded camera/time queries");
+    response = controller.getVehicleEvent(request(), vehicle.event_id);
+    require(
+        response.code == 200 &&
+            responseBody(response)["event"]["model_versions"]["detector"] ==
+                "vehicle-det-v1" &&
+            responseBody(response)["event"]["delivery"]["status"] ==
+                "not_scheduled",
+        "vehicle event detail must expose versions and delivery state");
+    response = controller.vehicleEventSnapshot(request(), vehicle.event_id);
+    require(
+        response.code == 200 &&
+            response.get_header_value("Content-Type") == "image/jpeg",
+        "vehicle snapshot endpoint must serve a validated JPEG");
+    response = controller.vehicleModelStatus(request());
+    require(
+        response.code == 200 &&
+            responseBody(response)["all_ready"] == false &&
+            responseBody(response)["items"][0]["delivery_status"] == "planned" &&
+            responseBody(response)["items"][1]["ready"] == false,
+        "model status must reject planned artifacts and non-hex SHA256 values");
 
     SecurityAlertEventRecord failed_callback_alert = alert;
     failed_callback_alert.event_id = "evt_contract_callback_dead";

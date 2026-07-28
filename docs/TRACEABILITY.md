@@ -10,8 +10,8 @@
 | VCAS-FR-004 | 只向二级模型提交高质量车辆裁剪 | verified | 尺寸、清晰度、曝光、遮挡、截断门槛 | `VehicleCropQualityGate` | 合格与拒绝路径测试 |
 | VCAS-FR-005 | 二级属性池独立、有界并按 Track 去重 | in_progress | `queues.attribute_*` | `VehicleAttributeCandidateQueue`；真实 Runner 池待接入 | 背压、替换、淘汰测试 |
 | VCAS-FR-006 | 车身类型和颜色分别进行轨迹级融合 | verified | `attribute_vote_samples`、阈值 | `VehicleTrackAttributeAggregator` | 独立稳定与 unknown 测试 |
-| VCAS-FR-007 | 每条轨迹至多生成一个车辆事件 | in_progress | `vehicle_event.v1.schema.json` | 计划：Vehicle Event Publisher | `vehicle_contract_test.py` |
-| VCAS-FR-008 | 车辆事件可查询、可回调、可追溯 | in_progress | `vehicle_event.v1.schema.json` | 复用 Repository 与 Callback Outbox | `vehicle_contract_test.py` |
+| VCAS-FR-007 | 每条轨迹至多生成一个车辆事件 | in_progress | `vehicle_event.v1.schema.json`、`UNIQUE(run_id,track_id)` | `VehicleEventPublisher`、`CameraTaskRepository::publishVehicleEvent` | `vehicle_event_repository_test`、`vehicle_storage_api_contract_test.py`；PostgreSQL 实跑待补 |
+| VCAS-FR-008 | 车辆事件可查询、可回调、可追溯 | in_progress | Vehicle Event API、Schema v4 | `vision_events`、车辆投影、Callback Outbox | HTTP/Repository 契约已覆盖；PostgreSQL 实跑待补 |
 | VCAS-NFR-001 | 双路 1080p，每路检测平均不低于 8 FPS | planned | `detection_fps` | 计划：容量基准 | M0 固定回放待冻结 |
 | VCAS-NFR-002 | 8 小时无崩溃、显存持续增长或旧 Run 串入 | planned | Run generation | 复用代际抑制与心跳 | 计划：8 小时稳定性报告 |
 | VCAS-NFR-003 | 数据、模型、配置和代码版本可追溯 | in_progress | `config_version`、`model_versions` | Schema 与阶段记录 | `vehicle_contract_test.py` |
@@ -31,6 +31,10 @@
 | VCAS-RUNTIME-001 | 检测和属性结果必须抑制旧 Run 与旧序列 | verified | `run_generation`、frame/crop sequence | M3 Tracker 与 Aggregator | 旧代际和旧序列负向测试 |
 | VCAS-RUNTIME-002 | 异步属性裁剪必须保证像素生命周期安全 | verified | `shared_ptr<const OwnedImage>` | M2/M3 图像契约 | 拥有型裁剪复制与批次测试 |
 | VCAS-RUNTIME-003 | 属性过载优先保留高质量、更新的 Track 候选 | verified | Queue Metrics | M3 Attribute Queue | 容量淘汰与质量排序测试 |
+| VCAS-STORAGE-001 | 车辆事件父记录、类型化投影和 Outbox 必须原子提交 | in_progress | PostgreSQL Schema v4 | `publishVehicleEvent` 事务 | `vehicle_event_repository_test` 已构建；测试库实跑待补 |
+| VCAS-STORAGE-002 | 属性调试观测必须有界保留且不影响最终事件 | in_progress | `observation_retention_days` | Observation 写入与过期批量删除 | Repository 契约已覆盖；测试库实跑待补 |
+| VCAS-API-001 | 车辆实时、历史、详情和快照必须鉴权且不泄露本机路径 | in_progress | Vehicle Event API | `CameraTaskHttpController` | `camera_task_http_contract_test` 已构建、源码契约通过；测试库实跑待补 |
+| VCAS-API-002 | 模型计划态必须明确报告未就绪 | verified | `GET /api/v1/models/status` | Model Registry 只读状态映射 | App Config 与 HTTP 源码契约 |
 
 ## 更新规则
 

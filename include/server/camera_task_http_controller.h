@@ -1,7 +1,9 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <crow.h>
 
@@ -14,6 +16,12 @@
 namespace yolo11_server {
 
 class UnifiedCameraApplicationService;
+
+using VehicleRealtimeSnapshotReader = std::function<bool(
+    const std::string& camera_id,
+    std::vector<VehicleRealtimeTrackRecord>& tracks,
+    long long& generated_at_ms,
+    std::string& error)>;
 
 struct CameraTaskHttpHealth {
     bool enabled = false;
@@ -34,7 +42,8 @@ public:
         std::string token_override = {},
         std::shared_ptr<CameraProfileRegistry> profile_registry = {},
         AlgorithmRuntimeSnapshotReader algorithm_runtime_reader = {},
-        std::shared_ptr<UnifiedCameraApplicationService> application_service = {}
+        std::shared_ptr<UnifiedCameraApplicationService> application_service = {},
+        VehicleRealtimeSnapshotReader vehicle_realtime_reader = {}
     );
 
     bool initialize(std::string& error);
@@ -108,6 +117,19 @@ public:
     crow::response replayCallbackDelivery(
         const crow::request& request,
         const std::string& outbox_id);
+    crow::response vehicleRealtime(
+        const crow::request& request,
+        const std::string& task_id) const;
+    crow::response listVehicleEvents(
+        const crow::request& request,
+        const std::string& task_id) const;
+    crow::response getVehicleEvent(
+        const crow::request& request,
+        const std::string& event_id) const;
+    crow::response vehicleEventSnapshot(
+        const crow::request& request,
+        const std::string& event_id) const;
+    crow::response vehicleModelStatus(const crow::request& request) const;
 
 private:
     bool authorized(const crow::request& request) const;
@@ -125,6 +147,7 @@ private:
     std::shared_ptr<CameraProfileRegistry> profile_registry_;
     std::shared_ptr<UnifiedCameraApplicationService> application_service_;
     AlgorithmRuntimeSnapshotReader algorithm_runtime_reader_;
+    VehicleRealtimeSnapshotReader vehicle_realtime_reader_;
     std::string token_;
     bool initialized_ = false;
     bool storage_ok_ = false;

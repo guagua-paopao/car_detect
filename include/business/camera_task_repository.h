@@ -17,6 +17,9 @@ struct CameraTaskRepositoryStats {
     long long runs_failed = 0;
     long long frames_total = 0;
     long long alerts_total = 0;
+    long long vision_events_total = 0;
+    long long vehicle_events_total = 0;
+    long long vehicle_observations_total = 0;
     long long callbacks_pending = 0;
     long long callbacks_delivering = 0;
     long long callbacks_delivered = 0;
@@ -169,6 +172,45 @@ public:
         int limit,
         int offset,
         std::vector<SecurityAlertEventRecord>& alerts,
+        std::string& error
+    ) const;
+    bool getVisionEvent(
+        const std::string& event_id,
+        VisionEventRecord& event,
+        bool& found,
+        std::string& error
+    ) const;
+    bool publishVehicleEvent(
+        const VehicleTrackResultRecord& result,
+        const std::string& camera_profile,
+        const std::string& callback_profile,
+        std::string& error_code,
+        std::string& error
+    ) const;
+    bool getVehicleEvent(
+        const std::string& event_id,
+        VehicleTrackResultRecord& result,
+        bool& found,
+        std::string& error
+    ) const;
+    bool listVehicleEvents(
+        const std::string& camera_id,
+        long long occurred_from_ms,
+        long long occurred_to_ms,
+        int limit,
+        int offset,
+        std::vector<VehicleTrackResultRecord>& results,
+        std::string& error
+    ) const;
+    bool insertVehicleAttributeObservation(
+        const VehicleAttributeObservationRecord& observation,
+        std::string& error_code,
+        std::string& error
+    ) const;
+    bool deleteExpiredVehicleAttributeObservations(
+        long long now_ms,
+        int limit,
+        int& deleted_count,
         std::string& error
     ) const;
     bool claimDueCallback(

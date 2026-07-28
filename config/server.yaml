@@ -101,6 +101,14 @@ analysis:
     - "electronic_fence"
     - "pose_action"
     - "temporal_action"
+    - "vehicle_detection"
+    - "vehicle_attribute"
+
+vehicle_analytics:
+  enabled: true
+  config_path: "./config/vehicle_analytics.yaml"
+  model_registry_path: "./models/manifests/model_registry.v1.json"
+  observation_retention_days: 7
 
 callbacks:
   enabled: false
