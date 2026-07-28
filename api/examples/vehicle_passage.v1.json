@@ -28,7 +28,7 @@
     "detector": "vehicle-det-v1",
     "attribute": "vehicle-attr-v1",
     "labels": "vehicle-labels-v1",
-    "config": "vehicle-analytics-m2"
+    "config": "vehicle-analytics-m3"
   },
   "evidence": {
     "snapshot_url": "/api/v1/vehicle-events/ve_gate_01_42/snapshot",

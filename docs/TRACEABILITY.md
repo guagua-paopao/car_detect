@@ -6,10 +6,10 @@
 |---|---|---|---|---|---|
 | VCAS-FR-001 | 每个 Camera Profile 最多一个 RTSP Reader | verified | `config/cameras.yaml` | `shared_camera_frame_hub.*` | `shared_camera_frame_hub_test` |
 | VCAS-FR-002 | 一级车辆检测采用最新帧优先的有界队列 | planned | `config/vehicle_analytics.yaml` | 计划：Vehicle Detection Pool | 计划：车辆检测池测试 |
-| VCAS-FR-003 | 摄像头内车辆跟踪和确认状态机 | planned | `min_confirm_hits`、`track_timeout_ms` | 计划：Vehicle Tracker | 计划：轨迹状态机测试 |
-| VCAS-FR-004 | 只向二级模型提交高质量车辆裁剪 | planned | `min_crop_width_px` | 计划：Crop Quality Gate | 计划：质量门控测试 |
-| VCAS-FR-005 | 二级属性池独立、有界并按 Track 去重 | planned | `queues.attribute_*` | 计划：Vehicle Attribute Batch Pool | 计划：背压与去重测试 |
-| VCAS-FR-006 | 车身类型和颜色分别进行轨迹级融合 | planned | `attribute_vote_samples`、阈值 | 计划：Track Attribute Aggregator | 计划：融合测试 |
+| VCAS-FR-003 | 摄像头内车辆跟踪和确认状态机 | verified | `min_confirm_hits`、`track_timeout_ms`、IoU 阈值 | `VehicleTracker` | `vehicle_cascade_runtime_test` |
+| VCAS-FR-004 | 只向二级模型提交高质量车辆裁剪 | verified | 尺寸、清晰度、曝光、遮挡、截断门槛 | `VehicleCropQualityGate` | 合格与拒绝路径测试 |
+| VCAS-FR-005 | 二级属性池独立、有界并按 Track 去重 | in_progress | `queues.attribute_*` | `VehicleAttributeCandidateQueue`；真实 Runner 池待接入 | 背压、替换、淘汰测试 |
+| VCAS-FR-006 | 车身类型和颜色分别进行轨迹级融合 | verified | `attribute_vote_samples`、阈值 | `VehicleTrackAttributeAggregator` | 独立稳定与 unknown 测试 |
 | VCAS-FR-007 | 每条轨迹至多生成一个车辆事件 | in_progress | `vehicle_event.v1.schema.json` | 计划：Vehicle Event Publisher | `vehicle_contract_test.py` |
 | VCAS-FR-008 | 车辆事件可查询、可回调、可追溯 | in_progress | `vehicle_event.v1.schema.json` | 复用 Repository 与 Callback Outbox | `vehicle_contract_test.py` |
 | VCAS-NFR-001 | 双路 1080p，每路检测平均不低于 8 FPS | planned | `detection_fps` | 计划：容量基准 | M0 固定回放待冻结 |
@@ -25,6 +25,9 @@
 | VCAS-MODEL-003 | 异步模型结果保留 Artifact、标签、Run generation 和序列上下文 | verified | Runner Request/Result | M2 C++ 契约 | C++ Fake Runner 往返测试 |
 | VCAS-MODEL-004 | 未完成校验和及来源证据的模型不得声明已部署 | verified | `delivery_status`、SHA256、provenance | Registry Validator | 虚假部署状态负向测试 |
 | VCAS-MODEL-005 | ONNX 跨环境交付，TensorRT Engine 在目标 Windows 主机构建 | in_progress | Registry `target`、文件字段 | 计划：TensorRT Adapter | 计划：ONNX/TRT 精度回归 |
+| VCAS-RUNTIME-001 | 检测和属性结果必须抑制旧 Run 与旧序列 | verified | `run_generation`、frame/crop sequence | M3 Tracker 与 Aggregator | 旧代际和旧序列负向测试 |
+| VCAS-RUNTIME-002 | 异步属性裁剪必须保证像素生命周期安全 | verified | `shared_ptr<const OwnedImage>` | M2/M3 图像契约 | 拥有型裁剪复制与批次测试 |
+| VCAS-RUNTIME-003 | 属性过载优先保留高质量、更新的 Track 候选 | verified | Queue Metrics | M3 Attribute Queue | 容量淘汰与质量排序测试 |
 
 ## 更新规则
 

@@ -84,8 +84,13 @@ def validate_registry(
     config_registry = runtime_config.get("model_registry_path")
     if config_registry != "./models/manifests/model_registry.v1.json":
         errors.append("runtime config must reference model_registry.v1.json")
-    if runtime_config.get("config_version") != "vehicle-analytics-m2":
-        errors.append("runtime config_version must be vehicle-analytics-m2")
+    config_version = runtime_config.get("config_version")
+    try:
+        config_stage = int(str(config_version).removeprefix("vehicle-analytics-m"))
+    except ValueError:
+        config_stage = -1
+    if not str(config_version).startswith("vehicle-analytics-m") or config_stage < 2:
+        errors.append("runtime config_version must be vehicle-analytics-m2 or later")
     if runtime_config.get("labels_version") != registry.get("labels_version"):
         errors.append("runtime and model registry labels_version must match")
 
