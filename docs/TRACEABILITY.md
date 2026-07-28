@@ -35,6 +35,11 @@
 | VCAS-STORAGE-002 | 属性调试观测必须有界保留且不影响最终事件 | in_progress | `observation_retention_days` | Observation 写入与过期批量删除 | Repository 契约已覆盖；测试库实跑待补 |
 | VCAS-API-001 | 车辆实时、历史、详情和快照必须鉴权且不泄露本机路径 | in_progress | Vehicle Event API | `CameraTaskHttpController` | `camera_task_http_contract_test` 已构建、源码契约通过；测试库实跑待补 |
 | VCAS-API-002 | 模型计划态必须明确报告未就绪 | verified | `GET /api/v1/models/status` | Model Registry 只读状态映射 | App Config 与 HTTP 源码契约 |
+| VCAS-RELEASE-001 | 双路 1080p 每路 Detection 平均不低于 8 FPS 且队列不持续增长 | in_progress | Release Policy v1 | 双路性能脚本与 Evidence Gate | 边界/负向契约通过；目标机实测待补 |
+| VCAS-RELEASE-002 | 属性稳定 P95≤1.5秒且事件持久化 P95≤2秒 | in_progress | Release Policy v1 | Release Evidence Latency Gate | 边界契约通过；真实运行时证据待补 |
+| VCAS-RELEASE-003 | 8 小时无崩溃、显存持续增长、无界重连或旧 Run 串入 | in_progress | Release Policy v1 | Soak 脚本与 Stability Gate | 旧 Run 负向契约通过；8 小时实测待补 |
+| VCAS-RELEASE-004 | RTSP、PostgreSQL、Redis、Callback 5xx 和 Worker 重启均有故障证据 | in_progress | Release Evidence `fault_drills` | 复用隔离故障脚本 | 完整性门禁通过；实际演练待补 |
+| VCAS-RELEASE-005 | 发布包与上一版本数据库、二进制、配置、Engine 可验证和回滚 | in_progress | Release Manifest、SHA256 | Package/Backup/Restore/Rollback | 源码与失败关闭契约通过；实际回滚待补 |
 
 ## 更新规则
 

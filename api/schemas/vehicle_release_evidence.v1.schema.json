@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://car-detect.local/schemas/vehicle_release_evidence.v1.schema.json",
+  "title": "Vehicle Learning Release Evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "release_id",
+    "status",
+    "generated_at",
+    "source",
+    "versions",
+    "artifact_hashes",
+    "model_delivery",
+    "performance",
+    "latency",
+    "stability",
+    "idempotency",
+    "fault_drills",
+    "rollback",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "release_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,160}$"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "passed", "failed"]
+    },
+    "generated_at": {"type": "string", "format": "date-time"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "dirty"],
+      "properties": {
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "dirty": {"type": "boolean"}
+      }
+    },
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dataset",
+        "dataset_manifest",
+        "labels",
+        "model_registry",
+        "vehicle_config",
+        "database_schema"
+      ],
+      "properties": {
+        "dataset": {"type": ["string", "null"]},
+        "dataset_manifest": {"type": ["string", "null"]},
+        "labels": {"type": "string", "minLength": 1},
+        "model_registry": {"type": "string", "minLength": 1},
+        "vehicle_config": {"type": "string", "minLength": 1},
+        "database_schema": {"type": "integer", "minimum": 1}
+      }
+    },
+    "artifact_hashes": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/artifact_hash"},
+      "uniqueItems": true
+    },
+    "model_delivery": {"$ref": "#/$defs/gate"},
+    "performance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "duration_minutes",
+        "queue_growth_detected",
+        "cameras",
+        "evidence_path"
+      ],
+      "properties": {
+        "status": {"$ref": "#/$defs/gate_status"},
+        "duration_minutes": {"type": "number", "minimum": 0},
+        "queue_growth_detected": {"type": ["boolean", "null"]},
+        "cameras": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "camera_id",
+              "width",
+              "height",
+              "detection_fps"
+            ],
+            "properties": {
+              "camera_id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,160}$"
+              },
+              "width": {"type": "integer", "minimum": 1},
+              "height": {"type": "integer", "minimum": 1},
+              "detection_fps": {"type": "number", "minimum": 0}
+            }
+          }
+        },
+        "evidence_path": {"type": ["string", "null"]}
+      }
+    },
+    "latency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "attribute_stable_p95_ms",
+        "event_persist_p95_ms",
+        "evidence_path"
+      ],
+      "properties": {
+        "status": {"$ref": "#/$defs/gate_status"},
+        "attribute_stable_p95_ms": {"type": ["number", "null"], "minimum": 0},
+        "event_persist_p95_ms": {"type": ["number", "null"], "minimum": 0},
+        "evidence_path": {"type": ["string", "null"]}
+      }
+    },
+    "stability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "duration_hours",
+        "crashes",
+        "gpu_memory_growth_detected",
+        "unbounded_reconnect_detected",
+        "stale_run_results_detected",
+        "evidence_path"
+      ],
+      "properties": {
+        "status": {"$ref": "#/$defs/gate_status"},
+        "duration_hours": {"type": "number", "minimum": 0},
+        "crashes": {"type": "integer", "minimum": 0},
+        "gpu_memory_growth_detected": {"type": ["boolean", "null"]},
+        "unbounded_reconnect_detected": {"type": ["boolean", "null"]},
+        "stale_run_results_detected": {"type": ["boolean", "null"]},
+        "evidence_path": {"type": ["string", "null"]}
+      }
+    },
+    "idempotency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "duplicate_final_events",
+        "evidence_path"
+      ],
+      "properties": {
+        "status": {"$ref": "#/$defs/gate_status"},
+        "duplicate_final_events": {"type": ["integer", "null"], "minimum": 0},
+        "evidence_path": {"type": ["string", "null"]}
+      }
+    },
+    "fault_drills": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/gate"}
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "database_backup_restore",
+        "previous_binary_retained",
+        "previous_config_retained",
+        "previous_engine_retained",
+        "rollback_drill",
+        "evidence_path"
+      ],
+      "properties": {
+        "database_backup_restore": {"$ref": "#/$defs/gate_status"},
+        "previous_binary_retained": {"$ref": "#/$defs/gate_status"},
+        "previous_config_retained": {"$ref": "#/$defs/gate_status"},
+        "previous_engine_retained": {"$ref": "#/$defs/gate_status"},
+        "rollback_drill": {"$ref": "#/$defs/gate_status"},
+        "evidence_path": {"type": ["string", "null"]}
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {"type": "string", "maxLength": 2000}
+    }
+  },
+  "$defs": {
+    "gate_status": {
+      "type": "string",
+      "enum": ["pending", "passed", "failed"]
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "evidence_path"],
+      "properties": {
+        "status": {"$ref": "#/$defs/gate_status"},
+        "evidence_path": {"type": ["string", "null"]}
+      }
+    },
+    "artifact_hash": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

@@ -19,6 +19,6 @@
 | M3 级联运行时 | completed | [VCAS_M3_CASCADE_RUNTIME.md](VCAS_M3_CASCADE_RUNTIME.md) | 跟踪、门控、属性队列、轨迹融合 |
 | M2R 模型交付回补 | awaiting_assets | [VCAS_M2R_MODEL_DELIVERY.md](VCAS_M2R_MODEL_DELIVERY.md) | 真实 TensorRT Adapter、Engine 构建、SHA256 与精度门禁 |
 | M4 存储与 API | implemented_pending_integration | [VCAS_M4_STORAGE_API.md](VCAS_M4_STORAGE_API.md) | 数据迁移、车辆事件 API、快照和回调 |
-| M5 部署与验收 | planned | 待创建 | TensorRT、性能、稳定性、故障和回滚报告 |
+| M5 部署与验收 | implemented_awaiting_acceptance | [VCAS_M5_DEPLOYMENT_ACCEPTANCE.md](VCAS_M5_DEPLOYMENT_ACCEPTANCE.md) | 发布策略、证据门禁、性能/稳定性/故障/回滚与打包 |
 
 旧 `vision_project` 的阶段日志不复制到此目录；需要追溯时使用 `upstream` 仓库及 `docs/BASELINE_IMPORT.md` 中记录的提交。
