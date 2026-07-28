@@ -8,7 +8,8 @@
 - 基线分支：`agent/vcas-m3-cascade-runtime`
 - 基线提交：`b46972ae350f8f7d3398a4edbd2014028364a640`
 - 当前分支：`agent/vcas-model-delivery-return`
-- 完成提交：待本分支发布后回填
+- Adapter 与交付门禁实现提交：`3974f1e`
+- 阶段完成提交：不适用；等待真实模型与数据资产
 
 ## 已完成范围
 
