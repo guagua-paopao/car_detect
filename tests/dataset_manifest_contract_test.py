@@ -37,6 +37,30 @@ def main() -> None:
     if errors:
         raise AssertionError(f"example manifest must pass: {errors!r}")
 
+    multi_box = copy.deepcopy(manifest)
+    first = multi_box["samples"][0]["annotations"]
+    first["detections"] = [
+        first.pop("detection"),
+        {
+            "bbox_xyxy_norm": [0.05, 0.10, 0.15, 0.30],
+            "vehicle_class": "motorcycle",
+            "occluded": False,
+            "truncated": False,
+        },
+    ]
+    errors = validate_manifest(multi_box, labels)
+    if errors:
+        raise AssertionError(f"multi-box manifest must pass: {errors!r}")
+
+    mixed_detection_forms = copy.deepcopy(multi_box)
+    mixed_detection_forms["samples"][0]["annotations"]["detection"] = copy.deepcopy(
+        mixed_detection_forms["samples"][0]["annotations"]["detections"][0]
+    )
+    require_error(
+        validate_manifest(mixed_detection_forms, labels),
+        "must use detection or detections, not both",
+    )
+
     if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
         raise AssertionError("dataset manifest schema must use JSON Schema 2020-12")
     if schema.get("additionalProperties") is not False:

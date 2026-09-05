@@ -36,11 +36,8 @@ CameraRunSpec cameraApiRunSpec(
 ) {
     CameraRunSpecOptions options;
     options.origin = kCameraRunOriginCameraApi;
-    options.analysis_config_version = config.people_flow.config_version.empty()
-        ? task.algorithm_profile
-        : config.people_flow.config_version;
-    options.initial_occupancy = config.people_flow.initial_occupancy;
-    options.snapshot_fps = config.people_flow.snapshot_fps;
+    options.analysis_config_version = task.algorithm_profile;
+    options.snapshot_fps = config.vehicle_analytics.snapshot_fps;
     return makeCameraRunSpec(
         task, std::move(run_id), create_time_ms, std::move(options));
 }

@@ -10,7 +10,7 @@
 
 namespace yolo11_server {
 
-    // Detect/pose/seg TensorRT plugins expose axis-aligned boxes as
+    // Detect/seg TensorRT plugins expose axis-aligned boxes as
     // [left, top, right, bottom] in the letterboxed network-input space.
     // Business modules must convert that geometry before applying pixel-size,
     // ROI, tracking, or line-crossing logic on the original image.

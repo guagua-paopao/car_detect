@@ -74,50 +74,50 @@ int main() {
     std::string error;
 
     require(first.acquireVisionWorkerLease(
-            "unified_camera_pipeline", 5, error),
-        "first unified Worker process must acquire startup coordination: " +
+            "vehicle_camera_pipeline", 5, error),
+        "first vehicle Worker process must acquire startup coordination: " +
             error);
     error.clear();
     require(!second.acquireVisionWorkerLease(
-            "unified_camera_pipeline", 5, error),
-        "a second unified Worker process must not consume concurrently");
+            "vehicle_camera_pipeline", 5, error),
+        "a second vehicle Worker process must not consume concurrently");
     error.clear();
     require(!second.acquireVisionWorkerLease(
-            "legacy_split", 5, error),
-        "a legacy Worker mode must not overlap the unified Worker");
+            "incompatible_mode", 5, error),
+        "an incompatible Worker mode must not overlap the vehicle Worker");
     error.clear();
     require(first.refreshVisionWorkerLease(
-            "unified_camera_pipeline", 5, error),
+            "vehicle_camera_pipeline", 5, error),
         "the owning Worker generation must refresh process ownership: " +
             error);
     error.clear();
     require(first.releaseVisionWorkerLease(
-            "unified_camera_pipeline", error),
+            "vehicle_camera_pipeline", error),
         "the owning Worker generation must release process ownership: " +
             error);
     error.clear();
     require(second.acquireVisionWorkerLease(
-            "unified_camera_pipeline", 5, error),
+            "vehicle_camera_pipeline", 5, error),
         "replacement Worker must acquire process ownership after release: " +
             error);
     error.clear();
     require(second.releaseVisionWorkerLease(
-            "unified_camera_pipeline", error),
+            "vehicle_camera_pipeline", error),
         "replacement Worker must release process ownership: " + error);
     error.clear();
     require(first.acquireVisionWorkerLease(
-            "legacy_split", 3, error),
-        "legacy Worker must acquire the recovery-drill lease: " + error);
+            "vehicle_camera_pipeline", 3, error),
+        "vehicle Worker must acquire the recovery-drill lease: " + error);
     std::this_thread::sleep_for(std::chrono::milliseconds(3300));
     error.clear();
     require(second.acquireVisionWorkerLease(
-            "unified_camera_pipeline", 3, error),
-        "unified replacement must take ownership after a crashed Worker's "
+            "vehicle_camera_pipeline", 3, error),
+        "replacement must take ownership after a crashed Worker's "
         "lease expires: " + error);
     error.clear();
     require(second.releaseVisionWorkerLease(
-            "unified_camera_pipeline", error),
-        "recovered unified Worker must release process ownership: " +
+            "vehicle_camera_pipeline", error),
+        "recovered vehicle Worker must release process ownership: " +
             error);
     error.clear();
 
@@ -161,13 +161,12 @@ int main() {
     submitted.camera_profile = "entry_camera_01";
     submitted.definition_version = 3;
     submitted.analysis_enabled = true;
-    submitted.algorithm_profile = "security_default";
-    submitted.algorithms = { "people_flow" };
+    submitted.algorithm_profile = "vehicle_default";
+    submitted.algorithms = { "vehicle_detection" };
     submitted.origin = "camera_api";
-    submitted.analysis_config_version = "entry-line-v3";
-    submitted.initial_occupancy = 9;
+    submitted.analysis_config_version = "vehicle-v1";
     submitted.snapshot_fps = 2;
-    submitted.algorithm_parameters_json = R"({"line_id":"main"})";
+    submitted.algorithm_parameters_json = R"({"tracking":"default"})";
     submitted.create_time_ms = 1774412345000LL;
     require(command_queue.submitStart(submitted, error),
         "command_version 3 must serialize: " + error);
@@ -175,10 +174,9 @@ int main() {
     require(command_queue.poll(received, error),
         "command_version 3 must deserialize: " + error);
     require(received.origin == "camera_api" &&
-            received.analysis_config_version == "entry-line-v3" &&
-            received.initial_occupancy == 9 &&
+            received.analysis_config_version == "vehicle-v1" &&
             received.snapshot_fps == 2 &&
-            received.algorithm_parameters_json == R"({"line_id":"main"})",
+            received.algorithm_parameters_json == R"({"tracking":"default"})",
         "command_version 3 RunSpec fields must round-trip through Redis");
     require(command_queue.acknowledge(received.message_id, error),
         "command_version 3 must acknowledge");
@@ -204,9 +202,9 @@ int main() {
         "definition_version 1 frame_interval_ms 1000 output_mode latest "
         "jpeg_quality 90 max_width 0 max_height 0 retention_days 7 "
         "max_saved_frames 100 analysis_enabled 1 target_infer_fps 5 "
-        "algorithm_profile security_default algorithms_json %s "
+        "algorithm_profile vehicle_default algorithms_json %s "
         "callback_profile backend_primary create_time_ms 123",
-        command_config.command_stream_key.c_str(), R"(["people_flow"])"));
+        command_config.command_stream_key.c_str(), R"(["vehicle_detection"])"));
     require(legacy != nullptr && legacy->type != REDIS_REPLY_ERROR,
         "legacy command_version 2 message must be injected");
     freeReplyObject(legacy);
@@ -216,10 +214,9 @@ int main() {
         "legacy command_version 2 must remain consumable: " + error);
     require(legacy_received.task_id == "legacy_camera" &&
             legacy_received.algorithms ==
-                std::vector<std::string>({ "people_flow" }) &&
+                std::vector<std::string>({ "vehicle_detection" }) &&
             legacy_received.origin == "camera_api" &&
             legacy_received.analysis_config_version.empty() &&
-            legacy_received.initial_occupancy == 0 &&
             legacy_received.snapshot_fps == 0 &&
             legacy_received.algorithm_parameters_json == "{}",
         "missing R2 fields must receive backward-compatible defaults");
@@ -239,17 +236,12 @@ int main() {
     CameraTaskRunHotStatus analysis_status;
     analysis_status.run_id = pipeline_status.run_id;
     analysis_status.task_id = pipeline_status.task_id;
-    analysis_status.analysis_config_version = "entry-line-v3";
+    analysis_status.analysis_config_version = "vehicle-v1";
     analysis_status.infer_fps = 6.5;
     analysis_status.analysis_frame_count = 11;
-    analysis_status.initial_occupancy = 4;
-    analysis_status.in_count = 3;
-    analysis_status.out_count = 1;
-    analysis_status.occupancy = 6;
-    analysis_status.live_persons = 2;
     analysis_status.analysis_reconnect_count = 1;
-    analysis_status.security_state_json =
-        R"({"stages":{"phase1":{"ready":true},"phase2":{"ready":true},"phase3":{"ready":true},"phase4":{"ready":true}}})";
+    analysis_status.analysis_state_json =
+        R"({"mode":"vehicle_cascade","confirmed_count":2})";
     analysis_status.analysis_snapshot_relative_path =
         "camera_r3/cr_r3_status/analysis/latest.jpg";
     analysis_status.analysis_last_update_ms = 1774412345100LL;
@@ -261,9 +253,10 @@ int main() {
             merged_status.found &&
             merged_status.pipeline_thread_running &&
             merged_status.sampled_frames == 17 &&
-            merged_status.analysis_config_version == "entry-line-v3" &&
+            merged_status.analysis_config_version == "vehicle-v1" &&
             merged_status.analysis_frame_count == 11 &&
-            merged_status.occupancy == 6 &&
+            merged_status.analysis_state_json ==
+                analysis_status.analysis_state_json &&
             merged_status.analysis_snapshot_relative_path ==
                 analysis_status.analysis_snapshot_relative_path,
         "pipeline and analysis writers must merge without overwriting each other");

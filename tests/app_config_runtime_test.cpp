@@ -22,10 +22,13 @@ int main(int argc, char** argv) {
     require(argc == 3, "server and worker YAML paths are required");
 
     const AppConfig defaults{};
-    require(defaults.runtime.unified_camera_pipeline &&
-            defaults.runtime.people_flow_compatibility &&
-            defaults.runtime.legacy_people_flow_fallback,
-        "R8 compiled defaults must prefer unified and retain rollback");
+    require(!defaults.analysis.async_result_dispatch &&
+            defaults.vehicle_analytics.attribute_contexts == 2 &&
+            !defaults.vehicle_analytics.dynamic_batching &&
+            defaults.vehicle_analytics.async_snapshots &&
+            defaults.vehicle_analytics.snapshot_writer_threads == 1 &&
+            defaults.vehicle_analytics.snapshot_queue_capacity == 2,
+        "GPU pipeline defaults must use synchronous dispatch and two direct attribute contexts");
 
     const auto server = AppConfig::loadFromYaml(argv[1]);
     require(server.server.host == "127.0.0.1" && server.server.port == 8087,
@@ -38,11 +41,11 @@ int main(int argc, char** argv) {
         "server Camera Task and single-worker configuration must parse");
     require(server.analysis.enabled && server.analysis.inference_workers == 2 &&
             server.analysis.model_init_timeout_ms == 120000 &&
+            !server.analysis.async_result_dispatch &&
+            server.analysis.result_queue_capacity == 2 &&
             server.analysis.supported_algorithms ==
                 std::vector<std::string>({
-                    "electronic_fence", "people_flow", "pose_action",
-                    "security", "temporal_action", "vehicle_attribute",
-                    "vehicle_detection"
+                    "vehicle_attribute", "vehicle_detection"
                 }),
         "server fixed inference-pool configuration must parse");
     require(
@@ -51,13 +54,15 @@ int main(int argc, char** argv) {
                 "./config/vehicle_analytics.yaml" &&
             server.vehicle_analytics.model_registry_path ==
                 "./models/manifests/model_registry.v1.json" &&
-            server.vehicle_analytics.observation_retention_days == 7,
+            server.vehicle_analytics.observation_retention_days == 7 &&
+            server.vehicle_analytics.snapshot_fps == 2 &&
+            server.vehicle_analytics.jpeg_quality == 90 &&
+            server.vehicle_analytics.attribute_contexts == 2 &&
+            !server.vehicle_analytics.dynamic_batching &&
+            server.vehicle_analytics.async_snapshots &&
+            server.vehicle_analytics.snapshot_writer_threads == 1 &&
+            server.vehicle_analytics.snapshot_queue_capacity == 2,
         "server vehicle storage/API configuration must parse");
-    require(server.runtime.unified_camera_pipeline &&
-            server.runtime.people_flow_compatibility &&
-            server.runtime.legacy_people_flow_fallback &&
-            !server.runtime.shadow_compare,
-        "server R8 runtime must default to unified while retaining rollback");
     require(!server.callbacks.enabled &&
             server.callbacks.poll_interval_ms == 250 &&
             server.callbacks.request_timeout_ms == 5000 &&
@@ -75,9 +80,9 @@ int main(int argc, char** argv) {
                 "YOLO11_CALLBACK_BACKEND_PRIMARY_SECRET" &&
             !server.callbacks.profiles.at("backend_primary").allow_insecure_http,
         "server callback delivery configuration must parse without resolving secrets");
-    require(server.people_flow.admin_token_env == server.camera_tasks.admin_token_env &&
-            server.people_flow.admin_token_env == "YOLO11_CAMERA_TASK_ADMIN_TOKEN",
-        "People Flow control mutations and Camera API must share one bearer-token source");
+    require(server.camera_tasks.admin_token_env ==
+            "YOLO11_CAMERA_TASK_ADMIN_TOKEN",
+        "Camera API must use the configured bearer-token source");
     require(!server.camera_tasks.defaults.analysis_enabled &&
             server.camera_tasks.defaults.target_infer_fps == 5.0 &&
             server.camera_tasks.defaults.algorithm_profile.empty() &&
@@ -99,15 +104,20 @@ int main(int argc, char** argv) {
     require(worker.camera_tasks.enabled && worker.worker.enabled &&
         worker.worker.worker_num == 1, "worker Camera Task configuration must parse");
     require(worker.analysis.enabled && worker.analysis.inference_workers == 2 &&
-            worker.analysis.model_init_timeout_ms == 120000,
+            worker.analysis.model_init_timeout_ms == 120000 &&
+            !worker.analysis.async_result_dispatch &&
+            worker.analysis.result_queue_capacity == 2,
         "worker fixed inference-pool configuration must parse");
-    require(worker.runtime.unified_camera_pipeline ==
-                server.runtime.unified_camera_pipeline &&
-            worker.runtime.people_flow_compatibility ==
-                server.runtime.people_flow_compatibility &&
-            worker.runtime.legacy_people_flow_fallback ==
-                server.runtime.legacy_people_flow_fallback,
-        "server and worker R4 migration switches must match");
+    require(worker.vehicle_analytics.attribute_contexts == 2 &&
+            !worker.vehicle_analytics.dynamic_batching &&
+            worker.vehicle_analytics.async_snapshots &&
+            worker.vehicle_analytics.snapshot_writer_threads == 1 &&
+            worker.vehicle_analytics.snapshot_queue_capacity == 2,
+        "worker bounded vehicle snapshot configuration must parse");
+    require(worker.model.type == "vehicle_detection" &&
+            worker.analysis.supported_algorithms ==
+                server.analysis.supported_algorithms,
+        "server and worker must share the vehicle-only model contract");
     require(!worker.callbacks.enabled &&
             worker.callbacks.profiles.count("backend_primary") == 1 &&
             worker.callbacks.profiles.at("backend_primary").url_env ==

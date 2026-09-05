@@ -321,7 +321,7 @@ FrameArtifactWriteResult FrameArtifactWriter::write(const FrameArtifactJob& job)
     FrameArtifactWriteResult result;
     result.save_time_ms = wallNowMs();
     try {
-        cv::Mat output = job.frame->image;
+        cv::Mat output = job.frame->bgrImage();
         if (output.empty()) {
             result.error_code = "FRAME_EMPTY";
             result.error_message = "camera frame is empty";

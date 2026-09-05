@@ -8,7 +8,9 @@ Milestone: M11
 The public domain resource is a camera instance identified by a stable
 `camera_id`. Creating, updating, starting, stopping, and deleting that resource
 controls its CPU-only frame-extraction object in the existing
-`four_stage_worker`. There is no public Camera Task definition CRUD.
+`four_stage_worker`. There is no public Camera Task definition CRUD. The
+current runtime adds vehicle detection and attribute analysis to that camera
+pipeline.
 
 An internal Run record remains necessary for execution audit, frame ownership,
 failure recovery, and metrics. Internal C++ names and PostgreSQL table names
@@ -52,7 +54,7 @@ creating a second thread.
 
 The extraction thread owns only a FrameHub subscription and JPEG scheduling.
 It does not own an FFmpeg decoder. `SharedCameraFrameHubRegistry` remains keyed
-by `camera_profile`, so People Flow and all camera extraction threads using the
+by `camera_profile`, so all extraction and vehicle-analysis consumers using the
 same Profile share one RTSP reader/decoder. Deleting one camera releases only
 its subscription; the Hub closes only after its final subscriber leaves.
 
@@ -63,7 +65,7 @@ in YAML, Redis, HTTP, logs, or Git. Server and Worker initialize the idempotent
 schema in `db/postgresql/001_initial_schema.sql`.
 
 PostgreSQL owns durable camera desired state, internal Runs, frame metadata,
-People Flow sessions/events/aggregates, and calibration audit. Redis remains
+vehicle events, analysis snapshots, and callback state. Redis remains
 the command, lease, heartbeat, and hot-state transport.
 
 The partial unique index permits only one queued/starting/running/reconnecting
@@ -79,7 +81,7 @@ thread per camera id.
 - a failed replacement leaves the new Run `failed` and never resurrects the
   deleted/disabled camera;
 - a PostgreSQL outage fails readiness and rejects new durable mutations;
-- an extraction encode/write error remains isolated from People Flow;
+- an extraction encode/write error remains isolated from vehicle inference;
 - RTSP URI and database credentials never enter request bodies.
 
 ## 7. Removed public capabilities

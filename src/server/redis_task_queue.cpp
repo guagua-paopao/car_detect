@@ -383,10 +383,6 @@ namespace yolo11_server {
             task.snapshot_path = fields["snapshot_path"];
             task.snapshot_interval_frames = static_cast<int>(parseLongLong(fields["snapshot_interval_frames"], 5));
             task.target_fps = static_cast<int>(parseLongLong(fields["target_fps"], 10));
-            task.people_flow_session_id = fields["session_id"];
-            task.people_flow_camera_id = fields["people_flow_camera_id"];
-            task.people_flow_config_version = fields["config_version"];
-            task.initial_occupancy = parseLongLong(fields["initial_occupancy"]);
             task.create_time_ms = parseLongLong(fields["create_time_ms"]);
             if (task.task_kind.empty()) {
                 if (!task.stream_task_id.empty()) {
@@ -413,13 +409,6 @@ namespace yolo11_server {
             else if (task.task_kind == "stream") {
                 if (task.stream_task_id.empty() || task.source_type.empty() || task.snapshot_path.empty()) {
                     error = "invalid redis stream message: missing stream_id/source_type/snapshot_path";
-                    return false;
-                }
-            }
-            else if (task.task_kind == "people_flow") {
-                if (task.people_flow_session_id.empty() || task.people_flow_camera_id.empty() ||
-                    task.camera_profile.empty() || task.source_ref.rfind("env:", 0) != 0) {
-                    error = "invalid people-flow message: missing session/camera/profile/secret reference";
                     return false;
                 }
             }
@@ -1783,374 +1772,6 @@ namespace yolo11_server {
         return getStreamTaskStatus(active_stream_id, status, error);
     }
 
-    bool RedisTaskQueue::submitPeopleFlowTask(const PeopleFlowStartRequest& request, std::string& error) const {
-        if (request.session_id.empty() || request.camera_id.empty() || request.camera_profile.empty()) {
-            error = "people-flow start requires session_id, camera_id and camera_profile";
-            return false;
-        }
-        if (request.source_ref.rfind("env:", 0) != 0 || request.source_ref.find("rtsp://") != std::string::npos) {
-            error = "people-flow source_ref must be an environment reference, never a plaintext URI";
-            return false;
-        }
-        const int active_ttl = std::max(10, request.active_ttl_seconds);
-        const int session_ttl = std::max(60, request.session_ttl_seconds);
-        const long long create_time_ms = request.create_time_ms > 0 ? request.create_time_ms : nowMs();
-        const std::string active_key = peopleFlowActiveKey(request.camera_id);
-        const std::string session_key = peopleFlowSessionKey(request.session_id);
-        const std::string realtime_key = peopleFlowRealtimeKey(request.camera_id);
-
-        std::lock_guard<std::mutex> lock(context_mutex_);
-        RedisReplyPtr reserve_reply = commandWithReconnectLocked(config_, context_, error, 10000,
-            "SET %s %s NX EX %d", active_key.c_str(), request.session_id.c_str(), active_ttl);
-        if (replyIsError(reserve_reply.get(), error, context_)) return false;
-        if (reserve_reply->type == REDIS_REPLY_NIL) {
-            RedisReplyPtr current_reply = commandWithReconnectLocked(config_, context_, error, 10000,
-                "GET %s", active_key.c_str());
-            if (replyIsError(current_reply.get(), error, context_)) return false;
-            const std::string active_session = current_reply->type == REDIS_REPLY_NIL
-                ? std::string{}
-                : replyString(current_reply.get());
-            std::string active_status;
-            if (!active_session.empty()) {
-                RedisReplyPtr status_reply = commandWithReconnectLocked(config_, context_, error, 10000,
-                    "HGET %s status", peopleFlowSessionKey(active_session).c_str());
-                if (replyIsError(status_reply.get(), error, context_)) return false;
-                if (status_reply->type != REDIS_REPLY_NIL) active_status = replyString(status_reply.get());
-            }
-            if (!active_session.empty() && !isTerminalStreamStatus(active_status)) {
-                error = "CAMERA_ALREADY_ACTIVE:" + active_session;
-                return false;
-            }
-            RedisReplyPtr delete_reply = commandWithReconnectLocked(config_, context_, error, 10000,
-                "DEL %s", active_key.c_str());
-            if (replyIsError(delete_reply.get(), error, context_)) return false;
-            reserve_reply = commandWithReconnectLocked(config_, context_, error, 10000,
-                "SET %s %s NX EX %d", active_key.c_str(), request.session_id.c_str(), active_ttl);
-            if (replyIsError(reserve_reply.get(), error, context_)) return false;
-            if (reserve_reply->type == REDIS_REPLY_NIL) {
-                error = "CAMERA_ALREADY_ACTIVE";
-                return false;
-            }
-        }
-
-        auto rollback = [&]() {
-            std::string ignored;
-            (void)releaseActiveStreamIfMatchedLocked(config_, context_, active_key, request.session_id, ignored);
-        };
-
-        RedisReplyPtr session_reply = commandWithReconnectLocked(config_, context_, error, 10000,
-            "HSET %s session_id %s camera_id %s camera_profile %s source_ref %s masked_uri %s config_version %s status %s snapshot_path %s initial_occupancy %lld in_count %lld out_count %lld occupancy %lld applied_calibration_version %lld live_persons %d create_time_ms %lld start_time_ms %lld stop_time_ms %lld last_update_ms %lld frame_count %lld stop_requested %d storage_degraded %d snapshot_degraded %d reconnect_count %d error %s last_error %s",
-            session_key.c_str(), request.session_id.c_str(), request.camera_id.c_str(),
-            request.camera_profile.c_str(), request.source_ref.c_str(), request.masked_uri.c_str(),
-            request.config_version.c_str(), "queued", request.snapshot_path.c_str(),
-            request.initial_occupancy, 0LL, 0LL, request.initial_occupancy, 0LL, 0,
-            create_time_ms, 0LL, 0LL, create_time_ms, 0LL, 0, 0, 0, 0, "", "");
-        if (replyIsError(session_reply.get(), error, context_) ||
-            !expireKey(context_, session_key, session_ttl, error)) {
-            rollback();
-            return false;
-        }
-
-        RedisReplyPtr realtime_reply = commandWithReconnectLocked(config_, context_, error, 10000,
-            "HSET %s session_id %s camera_id %s status %s in_count %lld out_count %lld occupancy %lld applied_calibration_version %lld requested_calibration_version %lld requested_occupancy %lld live_persons %d frame_count %lld last_update_ms %lld config_version %s",
-            realtime_key.c_str(), request.session_id.c_str(), request.camera_id.c_str(), "queued",
-            0LL, 0LL, request.initial_occupancy, 0LL, 0LL, request.initial_occupancy,
-            0, 0LL, create_time_ms, request.config_version.c_str());
-        if (replyIsError(realtime_reply.get(), error, context_) ||
-            !expireKey(context_, realtime_key, active_ttl, error)) {
-            rollback();
-            return false;
-        }
-
-        RedisReplyPtr stream_reply = commandWithReconnectLocked(config_, context_, error, 10000,
-            "XADD %s * task_id %s task_kind %s model_type %s session_id %s people_flow_camera_id %s camera_profile %s source_type %s source_ref %s masked_uri %s config_version %s snapshot_path %s initial_occupancy %lld create_time_ms %lld",
-            config_.stream_key.c_str(), request.session_id.c_str(), "people_flow", "detect",
-            request.session_id.c_str(), request.camera_id.c_str(), request.camera_profile.c_str(),
-            "rtsp", request.source_ref.c_str(), request.masked_uri.c_str(),
-            request.config_version.c_str(), request.snapshot_path.c_str(), request.initial_occupancy,
-            create_time_ms);
-        if (replyIsError(stream_reply.get(), error, context_)) {
-            rollback();
-            return false;
-        }
-        if (config_.stream_max_len > 0) {
-            RedisReplyPtr trim_reply = commandWithReconnectLocked(config_, context_, error, 10000,
-                "XTRIM %s MAXLEN ~ %lld", config_.stream_key.c_str(), config_.stream_max_len);
-            if (replyIsError(trim_reply.get(), error, context_)) {
-                rollback();
-                return false;
-            }
-        }
-        std::string index_error;
-        RedisReplyPtr index_reply = commandWithReconnectLocked(config_, context_, index_error, 10000,
-            "SET %s %s EX %d", peopleFlowLastKey(request.camera_id).c_str(),
-            request.session_id.c_str(), session_ttl);
-        (void)index_reply;
-        return true;
-    }
-
-    bool RedisTaskQueue::updatePeopleFlowSession(
-        const PeopleFlowSessionStatus& status,
-        int session_ttl_seconds,
-        int realtime_ttl_seconds,
-        std::string& error
-    ) const {
-        if (status.session_id.empty() || status.camera_id.empty()) {
-            error = "people-flow status requires session_id and camera_id";
-            return false;
-        }
-        const long long update_ms = status.last_update_ms > 0 ? status.last_update_ms : nowMs();
-        std::lock_guard<std::mutex> lock(context_mutex_);
-        RedisReplyPtr session_reply = commandWithReconnectLocked(config_, context_, error, 10000,
-            "HSET %s status %s camera_id %s camera_profile %s masked_uri %s config_version %s snapshot_path %s capture_state %s capture_backend %s shared_hub %d hub_instance_id %s hub_subscribers %d worker_id %d consumer_name %s stop_requested %d storage_degraded %d snapshot_degraded %d resolution_changed %d create_time_ms %lld start_time_ms %lld stop_time_ms %lld last_update_ms %lld last_frame_time_ms %lld latest_frame_age_ms %lld frame_count %lld dropped_frames %lld event_queue_depth %lld in_count %lld out_count %lld occupancy %lld applied_calibration_version %lld live_persons %d reconnect_count %d width %d height %d capture_fps %.6f infer_fps %.6f source_fps %.6f last_inference_ms %.6f error %s last_error %s",
-            peopleFlowSessionKey(status.session_id).c_str(), status.status.c_str(), status.camera_id.c_str(),
-            status.camera_profile.c_str(), status.masked_uri.c_str(), status.config_version.c_str(),
-            status.snapshot_path.c_str(), status.capture_state.c_str(), status.capture_backend.c_str(),
-            status.shared_hub ? 1 : 0, status.hub_instance_id.c_str(), status.hub_subscribers,
-            status.worker_id, status.consumer_name.c_str(), status.stop_requested ? 1 : 0,
-            status.storage_degraded ? 1 : 0, status.snapshot_degraded ? 1 : 0,
-            status.resolution_changed ? 1 : 0, status.create_time_ms, status.start_time_ms,
-            status.stop_time_ms, update_ms, status.last_frame_time_ms, status.latest_frame_age_ms,
-            status.frame_count, status.dropped_frames, status.event_queue_depth, status.in_count,
-            status.out_count, status.occupancy, status.applied_calibration_version,
-            status.live_persons, status.reconnect_count,
-            status.width, status.height, status.capture_fps, status.infer_fps, status.source_fps,
-            status.last_inference_ms, status.error.c_str(), status.last_error.c_str());
-        if (replyIsError(session_reply.get(), error, context_)) return false;
-        if (!expireKey(context_, peopleFlowSessionKey(status.session_id), std::max(60, session_ttl_seconds), error)) return false;
-
-        RedisReplyPtr realtime_reply = commandWithReconnectLocked(config_, context_, error, 10000,
-            "HSET %s session_id %s camera_id %s status %s in_count %lld out_count %lld occupancy %lld applied_calibration_version %lld live_persons %d frame_count %lld capture_state %s capture_backend %s shared_hub %d hub_instance_id %s hub_subscribers %d capture_fps %.6f infer_fps %.6f source_fps %.6f latest_frame_age_ms %lld reconnect_count %d dropped_frames %lld storage_degraded %d event_queue_depth %lld last_update_ms %lld config_version %s",
-            peopleFlowRealtimeKey(status.camera_id).c_str(), status.session_id.c_str(), status.camera_id.c_str(),
-            status.status.c_str(), status.in_count, status.out_count, status.occupancy,
-            status.applied_calibration_version, status.live_persons, status.frame_count,
-            status.capture_state.c_str(),
-            status.capture_backend.c_str(), status.shared_hub ? 1 : 0,
-            status.hub_instance_id.c_str(), status.hub_subscribers,
-            status.capture_fps, status.infer_fps, status.source_fps,
-            status.latest_frame_age_ms, status.reconnect_count, status.dropped_frames,
-            status.storage_degraded ? 1 : 0, status.event_queue_depth, update_ms,
-            status.config_version.c_str());
-        if (replyIsError(realtime_reply.get(), error, context_)) return false;
-        return expireKey(context_, peopleFlowRealtimeKey(status.camera_id), std::max(3, realtime_ttl_seconds), error);
-    }
-
-    namespace {
-        void fillPeopleFlowStatusFromValues(
-            const std::map<std::string, std::string>& values,
-            PeopleFlowSessionStatus& status
-        ) {
-            auto get = [&values](const std::string& key) -> std::string {
-                const auto it = values.find(key);
-                return it == values.end() ? std::string{} : it->second;
-            };
-            status.session_id = get("session_id");
-            status.camera_id = get("camera_id");
-            status.camera_profile = get("camera_profile");
-            status.masked_uri = get("masked_uri");
-            status.config_version = get("config_version");
-            status.status = get("status");
-            status.snapshot_path = get("snapshot_path");
-            status.capture_state = get("capture_state");
-            status.capture_backend = get("capture_backend");
-            status.shared_hub = parseLongLong(get("shared_hub")) != 0;
-            status.hub_instance_id = get("hub_instance_id");
-            status.hub_subscribers = static_cast<int>(parseLongLong(get("hub_subscribers")));
-            status.consumer_name = get("consumer_name");
-            status.error = get("error");
-            status.last_error = get("last_error");
-            status.worker_id = static_cast<int>(parseLongLong(get("worker_id")));
-            status.stop_requested = parseLongLong(get("stop_requested")) != 0;
-            status.storage_degraded = parseLongLong(get("storage_degraded")) != 0;
-            status.snapshot_degraded = parseLongLong(get("snapshot_degraded")) != 0;
-            status.resolution_changed = parseLongLong(get("resolution_changed")) != 0;
-            status.create_time_ms = parseLongLong(get("create_time_ms"));
-            status.start_time_ms = parseLongLong(get("start_time_ms"));
-            status.stop_time_ms = parseLongLong(get("stop_time_ms"));
-            status.last_update_ms = parseLongLong(get("last_update_ms"));
-            status.last_frame_time_ms = parseLongLong(get("last_frame_time_ms"));
-            status.latest_frame_age_ms = parseLongLong(get("latest_frame_age_ms"), -1);
-            status.frame_count = parseLongLong(get("frame_count"));
-            status.dropped_frames = parseLongLong(get("dropped_frames"));
-            status.event_queue_depth = parseLongLong(get("event_queue_depth"));
-            status.in_count = parseLongLong(get("in_count"));
-            status.out_count = parseLongLong(get("out_count"));
-            status.initial_occupancy = parseLongLong(get("initial_occupancy"));
-            status.occupancy = parseLongLong(get("occupancy"));
-            status.applied_calibration_version = parseLongLong(get("applied_calibration_version"));
-            status.live_persons = static_cast<int>(parseLongLong(get("live_persons")));
-            status.reconnect_count = static_cast<int>(parseLongLong(get("reconnect_count")));
-            status.width = static_cast<int>(parseLongLong(get("width")));
-            status.height = static_cast<int>(parseLongLong(get("height")));
-            status.capture_fps = parseDouble(get("capture_fps"));
-            status.infer_fps = parseDouble(get("infer_fps"));
-            status.source_fps = parseDouble(get("source_fps"));
-            status.last_inference_ms = parseDouble(get("last_inference_ms"));
-        }
-    }
-
-    bool RedisTaskQueue::getPeopleFlowSession(const std::string& session_id, PeopleFlowSessionStatus& status, std::string& error) const {
-        status = PeopleFlowSessionStatus{};
-        status.session_id = session_id;
-        std::lock_guard<std::mutex> lock(context_mutex_);
-        RedisReplyPtr reply = commandWithReconnectLocked(config_, context_, error, 10000,
-            "HGETALL %s", peopleFlowSessionKey(session_id).c_str());
-        if (replyIsError(reply.get(), error, context_)) return false;
-        const auto values = parseHashReply(reply.get());
-        if (values.empty()) return true;
-        status.found = true;
-        fillPeopleFlowStatusFromValues(values, status);
-        if (status.session_id.empty()) status.session_id = session_id;
-        return true;
-    }
-
-    bool RedisTaskQueue::getPeopleFlowRealtime(const std::string& camera_id, PeopleFlowSessionStatus& status, std::string& error) const {
-        status = PeopleFlowSessionStatus{};
-        status.camera_id = camera_id;
-        std::lock_guard<std::mutex> lock(context_mutex_);
-        RedisReplyPtr reply = commandWithReconnectLocked(config_, context_, error, 10000,
-            "HGETALL %s", peopleFlowRealtimeKey(camera_id).c_str());
-        if (replyIsError(reply.get(), error, context_)) return false;
-        const auto values = parseHashReply(reply.get());
-        if (values.empty()) return true;
-        status.found = true;
-        fillPeopleFlowStatusFromValues(values, status);
-        if (status.camera_id.empty()) status.camera_id = camera_id;
-        return true;
-    }
-
-    bool RedisTaskQueue::getActivePeopleFlowSession(const std::string& camera_id, std::string& session_id, std::string& error) const {
-        session_id.clear();
-        std::lock_guard<std::mutex> lock(context_mutex_);
-        RedisReplyPtr reply = commandWithReconnectLocked(config_, context_, error, 10000,
-            "GET %s", peopleFlowActiveKey(camera_id).c_str());
-        if (replyIsError(reply.get(), error, context_)) return false;
-        if (reply->type != REDIS_REPLY_NIL) session_id = replyString(reply.get());
-        return true;
-    }
-
-    bool RedisTaskQueue::getLastPeopleFlowSession(const std::string& camera_id, std::string& session_id, std::string& error) const {
-        session_id.clear();
-        std::lock_guard<std::mutex> lock(context_mutex_);
-        RedisReplyPtr reply = commandWithReconnectLocked(config_, context_, error, 10000,
-            "GET %s", peopleFlowLastKey(camera_id).c_str());
-        if (replyIsError(reply.get(), error, context_)) return false;
-        if (reply->type != REDIS_REPLY_NIL) session_id = replyString(reply.get());
-        return true;
-    }
-
-    bool RedisTaskQueue::refreshPeopleFlowLease(const std::string& camera_id, const std::string& session_id, int ttl_seconds, std::string& error) const {
-        std::lock_guard<std::mutex> lock(context_mutex_);
-        RedisReplyPtr reply = commandWithReconnectLocked(config_, context_, error, 10000,
-            "EVAL %s 1 %s %s %d",
-            "if redis.call('GET',KEYS[1])==ARGV[1] then return redis.call('EXPIRE',KEYS[1],ARGV[2]) else return 0 end",
-            peopleFlowActiveKey(camera_id).c_str(), session_id.c_str(), std::max(10, ttl_seconds));
-        if (replyIsError(reply.get(), error, context_)) return false;
-        if (reply->type == REDIS_REPLY_INTEGER && reply->integer == 0) {
-            error = "people-flow active lease is missing or owned by another session";
-            return false;
-        }
-        return true;
-    }
-
-    bool RedisTaskQueue::releasePeopleFlowLease(const std::string& camera_id, const std::string& session_id, std::string& error) const {
-        std::lock_guard<std::mutex> lock(context_mutex_);
-        return releaseActiveStreamIfMatchedLocked(config_, context_, peopleFlowActiveKey(camera_id), session_id, error);
-    }
-
-    bool RedisTaskQueue::requestStopPeopleFlow(const std::string& session_id, std::string& error) const {
-        std::lock_guard<std::mutex> lock(context_mutex_);
-        RedisReplyPtr reply = commandWithReconnectLocked(config_, context_, error, 10000,
-            "HSET %s stop_requested %d status %s last_update_ms %lld",
-            peopleFlowSessionKey(session_id).c_str(), 1, "stopping", nowMs());
-        return !replyIsError(reply.get(), error, context_);
-    }
-
-    bool RedisTaskQueue::isPeopleFlowStopRequested(const std::string& session_id, bool& stop_requested, std::string& error) const {
-        stop_requested = false;
-        std::lock_guard<std::mutex> lock(context_mutex_);
-        RedisReplyPtr reply = commandWithReconnectLocked(config_, context_, error, 10000,
-            "HGET %s stop_requested", peopleFlowSessionKey(session_id).c_str());
-        if (replyIsError(reply.get(), error, context_)) return false;
-        if (reply->type != REDIS_REPLY_NIL) stop_requested = parseLongLong(replyString(reply.get())) != 0;
-        return true;
-    }
-
-    bool RedisTaskQueue::appendPeopleFlowEvent(const CrossingEvent& event, int max_len, std::string& error) const {
-        std::lock_guard<std::mutex> lock(context_mutex_);
-        RedisReplyPtr reply;
-        if (max_len > 0) {
-            reply = commandWithReconnectLocked(config_, context_, error, 10000,
-                "XADD %s MAXLEN ~ %d * event_id %s session_id %s camera_id %s line_id %s track_id %lld direction %s event_time_ms %lld confidence %.6f point_x_norm %.8f point_y_norm %.8f config_version %s",
-                peopleFlowEventsKey(event.camera_id).c_str(), max_len, event.event_id.c_str(),
-                event.session_id.c_str(), event.camera_id.c_str(), event.line_id.c_str(),
-                static_cast<long long>(event.track_id), event.direction.c_str(), event.event_time_ms,
-                event.confidence, event.point_x_norm, event.point_y_norm, event.config_version.c_str());
-        }
-        else {
-            reply = commandWithReconnectLocked(config_, context_, error, 10000,
-                "XADD %s * event_id %s session_id %s camera_id %s line_id %s track_id %lld direction %s event_time_ms %lld confidence %.6f point_x_norm %.8f point_y_norm %.8f config_version %s",
-                peopleFlowEventsKey(event.camera_id).c_str(), event.event_id.c_str(),
-                event.session_id.c_str(), event.camera_id.c_str(), event.line_id.c_str(),
-                static_cast<long long>(event.track_id), event.direction.c_str(), event.event_time_ms,
-                event.confidence, event.point_x_norm, event.point_y_norm, event.config_version.c_str());
-        }
-        return !replyIsError(reply.get(), error, context_);
-    }
-
-    bool RedisTaskQueue::requestPeopleFlowCalibration(
-        const std::string& camera_id,
-        const std::string& session_id,
-        long long occupancy,
-        long long& calibration_version,
-        std::string& error
-    ) const {
-        calibration_version = 0;
-        if (camera_id.empty() || session_id.empty() || occupancy < 0) {
-            error = "invalid people-flow calibration request";
-            return false;
-        }
-        std::lock_guard<std::mutex> lock(context_mutex_);
-        RedisReplyPtr reply = commandWithReconnectLocked(config_, context_, error, 10000,
-            "EVAL %s 1 %s %s %lld",
-            "if redis.call('HGET',KEYS[1],'session_id')~=ARGV[1] then return -1 end "
-            "local v=redis.call('HINCRBY',KEYS[1],'requested_calibration_version',1) "
-            "redis.call('HSET',KEYS[1],'requested_occupancy',ARGV[2]) return v",
-            peopleFlowRealtimeKey(camera_id).c_str(), session_id.c_str(), occupancy);
-        if (replyIsError(reply.get(), error, context_)) return false;
-        if (reply->type != REDIS_REPLY_INTEGER || reply->integer < 0) {
-            error = "people-flow calibration session is no longer active";
-            return false;
-        }
-        calibration_version = static_cast<long long>(reply->integer);
-        RedisReplyPtr session_reply = commandWithReconnectLocked(config_, context_, error, 10000,
-            "HSET %s requested_calibration_version %lld requested_occupancy %lld",
-            peopleFlowSessionKey(session_id).c_str(), calibration_version, occupancy);
-        return !replyIsError(session_reply.get(), error, context_);
-    }
-
-    bool RedisTaskQueue::getPeopleFlowCalibrationRequest(
-        const std::string& camera_id,
-        long long& calibration_version,
-        long long& occupancy,
-        std::string& error
-    ) const {
-        calibration_version = 0;
-        occupancy = 0;
-        std::lock_guard<std::mutex> lock(context_mutex_);
-        RedisReplyPtr reply = commandWithReconnectLocked(config_, context_, error, 10000,
-            "HMGET %s requested_calibration_version requested_occupancy",
-            peopleFlowRealtimeKey(camera_id).c_str());
-        if (replyIsError(reply.get(), error, context_)) return false;
-        if (reply->type != REDIS_REPLY_ARRAY || reply->elements != 2) {
-            error = "invalid people-flow calibration reply";
-            return false;
-        }
-        calibration_version = parseLongLong(replyString(reply->element[0]));
-        occupancy = parseLongLong(replyString(reply->element[1]));
-        return true;
-    }
-
     bool RedisTaskQueue::getTaskStatus(const std::string& task_id, RedisTaskStatus& status, std::string& error) const {
         status = RedisTaskStatus{};
         status.task_id = task_id;
@@ -2627,7 +2248,6 @@ namespace yolo11_server {
             "stream_type %b "
             "runtime_mode %b "
             "worker_generation %b "
-            "legacy_people_flow_role %d "
             "camera_task_manager_running %d "
             "hub_registry_ready %d "
             "coordination_healthy %d "
@@ -2655,12 +2275,29 @@ namespace yolo11_server {
             "algorithm_inference_processed_jobs %lld "
             "algorithm_inference_failed_jobs %lld "
             "algorithm_inference_stale_results %lld "
+            "algorithm_inference_pending_result_jobs %lld "
+            "algorithm_inference_maximum_pending_result_jobs %lld "
+            "algorithm_inference_handled_result_jobs %lld "
             "algorithm_processor_running %d "
             "algorithm_processor_active_sessions %lld "
             "algorithm_processor_processed_frames %lld "
             "algorithm_processor_persisted_alerts %lld "
             "algorithm_processor_duplicate_alerts %lld "
             "algorithm_processor_failed_frames %lld "
+            "algorithm_attribute_scheduler_running %d "
+            "algorithm_attribute_scheduler_requests %lld "
+            "algorithm_attribute_scheduler_completed_requests %lld "
+            "algorithm_attribute_scheduler_failed_requests %lld "
+            "algorithm_attribute_scheduler_batches %lld "
+            "algorithm_attribute_scheduler_crops %lld "
+            "algorithm_attribute_scheduler_pending_requests %lld "
+            "algorithm_attribute_scheduler_maximum_pending_requests %lld "
+            "algorithm_attribute_scheduler_pending_crops %lld "
+            "algorithm_attribute_scheduler_maximum_pending_crops %lld "
+            "algorithm_attribute_scheduler_mean_queue_wait_ms %.6f "
+            "algorithm_attribute_scheduler_p95_queue_wait_ms %.6f "
+            "algorithm_attribute_scheduler_p99_queue_wait_ms %.6f "
+            "algorithm_attribute_scheduler_maximum_queue_wait_ms %.6f "
             "algorithm_callbacks_configured %d "
             "algorithm_callback_running %d "
             "algorithm_callback_profiles_ready %d "
@@ -2687,7 +2324,6 @@ namespace yolo11_server {
             heartbeat.runtime_mode.c_str(), heartbeat.runtime_mode.size(),
             heartbeat.worker_generation.c_str(),
             heartbeat.worker_generation.size(),
-            heartbeat.legacy_people_flow_role ? 1 : 0,
             heartbeat.camera_task_manager_running ? 1 : 0,
             heartbeat.hub_registry_ready ? 1 : 0,
             heartbeat.coordination_healthy ? 1 : 0,
@@ -2715,12 +2351,29 @@ namespace yolo11_server {
             heartbeat.algorithm_runtime.inference_processed_jobs,
             heartbeat.algorithm_runtime.inference_failed_jobs,
             heartbeat.algorithm_runtime.inference_stale_results,
+            heartbeat.algorithm_runtime.inference_pending_result_jobs,
+            heartbeat.algorithm_runtime.inference_maximum_pending_result_jobs,
+            heartbeat.algorithm_runtime.inference_handled_result_jobs,
             heartbeat.algorithm_runtime.processor_running ? 1 : 0,
             heartbeat.algorithm_runtime.processor_active_sessions,
             heartbeat.algorithm_runtime.processor_processed_frames,
             heartbeat.algorithm_runtime.processor_persisted_alerts,
             heartbeat.algorithm_runtime.processor_duplicate_alerts,
             heartbeat.algorithm_runtime.processor_failed_frames,
+            heartbeat.algorithm_runtime.attribute_scheduler_running ? 1 : 0,
+            heartbeat.algorithm_runtime.attribute_scheduler_requests,
+            heartbeat.algorithm_runtime.attribute_scheduler_completed_requests,
+            heartbeat.algorithm_runtime.attribute_scheduler_failed_requests,
+            heartbeat.algorithm_runtime.attribute_scheduler_batches,
+            heartbeat.algorithm_runtime.attribute_scheduler_crops,
+            heartbeat.algorithm_runtime.attribute_scheduler_pending_requests,
+            heartbeat.algorithm_runtime.attribute_scheduler_maximum_pending_requests,
+            heartbeat.algorithm_runtime.attribute_scheduler_pending_crops,
+            heartbeat.algorithm_runtime.attribute_scheduler_maximum_pending_crops,
+            heartbeat.algorithm_runtime.attribute_scheduler_mean_queue_wait_ms,
+            heartbeat.algorithm_runtime.attribute_scheduler_p95_queue_wait_ms,
+            heartbeat.algorithm_runtime.attribute_scheduler_p99_queue_wait_ms,
+            heartbeat.algorithm_runtime.attribute_scheduler_maximum_queue_wait_ms,
             heartbeat.algorithm_runtime.callbacks_configured ? 1 : 0,
             heartbeat.algorithm_runtime.callback_running ? 1 : 0,
             heartbeat.algorithm_runtime.callback_profiles_ready,
@@ -2797,12 +2450,6 @@ namespace yolo11_server {
                 record.stream_type = getValue("stream_type");
                 record.runtime_mode = getValue("runtime_mode");
                 record.worker_generation = getValue("worker_generation");
-                const std::string legacy_role =
-                    getValue("legacy_people_flow_role");
-                record.legacy_people_flow_role = legacy_role.empty()
-                    ? record.task_kind.find("live_people_flow") !=
-                        std::string::npos
-                    : parseLongLong(legacy_role) != 0;
                 const std::string manager_running =
                     getValue("camera_task_manager_running");
                 record.camera_task_manager_running = manager_running.empty()
@@ -2818,11 +2465,6 @@ namespace yolo11_server {
                 record.coordination_healthy = coordination.empty()
                     ? record.worker_kind == "vision_host"
                     : parseLongLong(coordination) != 0;
-                if (record.runtime_mode.empty() &&
-                    record.worker_kind == "vision_host") {
-                    record.runtime_mode = record.legacy_people_flow_role
-                        ? "legacy_split" : "unknown";
-                }
                 record.engine_path = getValue("engine_path");
                 record.labels_path = getValue("labels_path");
                 record.max_concurrency = static_cast<int>(parseLongLong(getValue("max_concurrency")));
@@ -2865,6 +2507,12 @@ namespace yolo11_server {
                     parseLongLong(getValue("algorithm_inference_failed_jobs"));
                 runtime.inference_stale_results =
                     parseLongLong(getValue("algorithm_inference_stale_results"));
+                runtime.inference_pending_result_jobs = parseLongLong(
+                    getValue("algorithm_inference_pending_result_jobs"));
+                runtime.inference_maximum_pending_result_jobs = parseLongLong(
+                    getValue("algorithm_inference_maximum_pending_result_jobs"));
+                runtime.inference_handled_result_jobs = parseLongLong(
+                    getValue("algorithm_inference_handled_result_jobs"));
                 runtime.processor_running =
                     parseLongLong(getValue("algorithm_processor_running")) != 0;
                 runtime.processor_active_sessions =
@@ -2877,6 +2525,34 @@ namespace yolo11_server {
                     parseLongLong(getValue("algorithm_processor_duplicate_alerts"));
                 runtime.processor_failed_frames =
                     parseLongLong(getValue("algorithm_processor_failed_frames"));
+                runtime.attribute_scheduler_running = parseLongLong(
+                    getValue("algorithm_attribute_scheduler_running")) != 0;
+                runtime.attribute_scheduler_requests = parseLongLong(
+                    getValue("algorithm_attribute_scheduler_requests"));
+                runtime.attribute_scheduler_completed_requests = parseLongLong(
+                    getValue("algorithm_attribute_scheduler_completed_requests"));
+                runtime.attribute_scheduler_failed_requests = parseLongLong(
+                    getValue("algorithm_attribute_scheduler_failed_requests"));
+                runtime.attribute_scheduler_batches = parseLongLong(
+                    getValue("algorithm_attribute_scheduler_batches"));
+                runtime.attribute_scheduler_crops = parseLongLong(
+                    getValue("algorithm_attribute_scheduler_crops"));
+                runtime.attribute_scheduler_pending_requests = parseLongLong(
+                    getValue("algorithm_attribute_scheduler_pending_requests"));
+                runtime.attribute_scheduler_maximum_pending_requests = parseLongLong(
+                    getValue("algorithm_attribute_scheduler_maximum_pending_requests"));
+                runtime.attribute_scheduler_pending_crops = parseLongLong(
+                    getValue("algorithm_attribute_scheduler_pending_crops"));
+                runtime.attribute_scheduler_maximum_pending_crops = parseLongLong(
+                    getValue("algorithm_attribute_scheduler_maximum_pending_crops"));
+                runtime.attribute_scheduler_mean_queue_wait_ms = parseDouble(
+                    getValue("algorithm_attribute_scheduler_mean_queue_wait_ms"));
+                runtime.attribute_scheduler_p95_queue_wait_ms = parseDouble(
+                    getValue("algorithm_attribute_scheduler_p95_queue_wait_ms"));
+                runtime.attribute_scheduler_p99_queue_wait_ms = parseDouble(
+                    getValue("algorithm_attribute_scheduler_p99_queue_wait_ms"));
+                runtime.attribute_scheduler_maximum_queue_wait_ms = parseDouble(
+                    getValue("algorithm_attribute_scheduler_maximum_queue_wait_ms"));
                 runtime.callbacks_configured =
                     parseLongLong(getValue("algorithm_callbacks_configured")) != 0;
                 runtime.callback_running =
@@ -2953,26 +2629,6 @@ namespace yolo11_server {
 
     std::string RedisTaskQueue::activeStreamTaskKey() const {
         return "yolo:streamtask:" + sanitizeRedisKeyPart(config_.stream_key) + ":active";
-    }
-
-    std::string RedisTaskQueue::peopleFlowSessionKey(const std::string& session_id) const {
-        return "yolo:pf:session:" + sanitizeRedisKeyPart(session_id);
-    }
-
-    std::string RedisTaskQueue::peopleFlowActiveKey(const std::string& camera_id) const {
-        return "yolo:pf:active:" + sanitizeRedisKeyPart(camera_id);
-    }
-
-    std::string RedisTaskQueue::peopleFlowLastKey(const std::string& camera_id) const {
-        return "yolo:pf:last:" + sanitizeRedisKeyPart(camera_id);
-    }
-
-    std::string RedisTaskQueue::peopleFlowRealtimeKey(const std::string& camera_id) const {
-        return "yolo:pf:realtime:" + sanitizeRedisKeyPart(camera_id);
-    }
-
-    std::string RedisTaskQueue::peopleFlowEventsKey(const std::string& camera_id) const {
-        return "yolo:pf:events:" + sanitizeRedisKeyPart(camera_id);
     }
 
     std::string RedisTaskQueue::statusKey(const std::string& task_id) const {

@@ -140,9 +140,9 @@ int main() {
 
     std::string error;
     require(manager.start(error), "camera task manager must start");
-    std::atomic<bool> people_flow_alive{ true };
-    std::thread simulated_people_flow([&]() {
-        while (people_flow_alive.load()) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    std::atomic<bool> observer_alive{ true };
+    std::thread simulated_observer([&]() {
+        while (observer_alive.load()) std::this_thread::sleep_for(std::chrono::milliseconds(2));
     });
 
     enqueue(commands, {CameraTaskCommandKind::start, "1-0", "task_a", "run_a", "entry"});
@@ -152,7 +152,7 @@ int main() {
     require(manager.activePipelineCount() == 2 &&
             manager.activePipelines().size() == 2,
         "N active camera ids must have exactly N registered CameraPipeline threads");
-    require(people_flow_alive.load(), "camera starts must not block the People Flow role");
+    require(observer_alive.load(), "camera starts must not block an independent observer");
 
     enqueue(commands, {CameraTaskCommandKind::start, "2-1", "task_b", "run_b", "entry"});
     require(waitUntil([&]() {
@@ -194,11 +194,11 @@ int main() {
     const auto active_runs = manager.activeRunIds();
     require(std::find(active_runs.begin(), active_runs.end(), "run_c_v2") != active_runs.end(),
         "stable camera id must point at the replacement run generation");
-    require(people_flow_alive.load(), "camera start/stop must leave People Flow alive");
+    require(observer_alive.load(), "camera start/stop must leave an observer alive");
 
     manager.stop();
-    people_flow_alive.store(false);
-    simulated_people_flow.join();
+    observer_alive.store(false);
+    simulated_observer.join();
     require(sessions->running.load() == 0, "manager shutdown must join all sessions");
     require(commands->acknowledged.size() == 7,
         "capacity-rejected START must stay pending while accepted/idempotent commands are acknowledged");

@@ -122,6 +122,8 @@ def main() -> None:
     analytics = config["vehicle_analytics"]
     if not 0 < analytics["detection_fps"] <= 120:
         raise AssertionError("detection_fps must be in (0, 120]")
+    if not 0 < analytics["detection_confidence_threshold"] <= 1:
+        raise AssertionError("detection_confidence_threshold must be in (0, 1]")
     if analytics["min_confirm_hits"] < 1:
         raise AssertionError("min_confirm_hits must be positive")
     if not 0 < analytics["type_threshold"] <= 1:

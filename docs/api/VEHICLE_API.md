@@ -14,7 +14,7 @@ Authorization: Bearer <YOLO11_CAMERA_TASK_ADMIN_TOKEN>
 
 `GET /cameras/{camera_id}/vehicles/realtime`
 
-响应来自注入到 `CameraTaskHttpController` 的 `VehicleRealtimeSnapshotReader`，不读取历史数据库。Reader 尚未接入 Worker 时仍返回 `200`，但 `available=false` 且 `items=[]`；Reader 执行失败返回 `503 VEHICLE_REALTIME_UNAVAILABLE`。
+响应来自注入到 `CameraTaskHttpController` 的 `VehicleRealtimeSnapshotReader`，不读取历史数据库。服务端从活动 Camera Run 的热状态读取 `vehicle_cascade` 轨迹；没有活动 Run、没有可用热状态或当前算法不是车辆级联时仍返回 `200`，但 `available=false` 且 `items=[]`；Reader 执行失败返回 `503 VEHICLE_REALTIME_UNAVAILABLE`。
 
 ```json
 {

@@ -92,8 +92,8 @@ try {
         analysis = @{
             enabled = $true
             target_infer_fps = 5.0
-            algorithm_profile = "security_default"
-            algorithms = @("people_flow")
+            algorithm_profile = "vehicle_default"
+            algorithms = @("vehicle_detection", "vehicle_attribute")
         }
     }
     $create = Invoke-Api -Method POST -Path "/cameras" `
@@ -177,7 +177,7 @@ try {
         -ArgumentList @(
             [string]$manifest.worker_config,
             "--consumer-name",
-            "people_flow_worker_1"
+            "car_detect_worker_1"
         ) -WorkingDirectory $ProjectRoot -PassThru -WindowStyle Hidden `
         -RedirectStandardOutput $stdout `
         -RedirectStandardError $stderr
@@ -209,9 +209,8 @@ try {
                 $ready.worker_coordination_healthy -and
                 $ready.camera_task_manager_running -and
                 $ready.hub_registry_ready -and
-                ($ready.expected_runtime_mode -ne
-                    "unified_camera_pipeline" -or
-                    -not $ready.legacy_people_flow_worker_detected)
+                $ready.expected_runtime_mode -eq
+                    "vehicle_camera_pipeline"
             if ($ready.ready -and $runtimeFenceReady -and
                 $ready.algorithm_runtime_generated_at_ms -gt $killedAtMs -and
                 $status.status -eq "running" -and

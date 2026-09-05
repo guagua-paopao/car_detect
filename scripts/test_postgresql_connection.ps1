@@ -34,4 +34,4 @@ foreach ($name in $executables) {
     & $testExe
     if ($LASTEXITCODE -ne 0) { throw "PostgreSQL integration test failed: $name" }
 }
-Write-Host "PASS: PostgreSQL People Flow, Camera CRUD/lifecycle, extraction, analysis, alert callback, storage, and HTTP contracts are valid." -ForegroundColor Green
+Write-Host "PASS: PostgreSQL Camera CRUD/lifecycle, vehicle analysis, callback, storage, and HTTP contracts are valid." -ForegroundColor Green

@@ -1,0 +1,68 @@
+{
+  "schema_version": "1.0",
+  "release_id": "v0_1_0_candidate",
+  "status": "pending",
+  "generated_at": "2026-07-28T00:00:00Z",
+  "source": {
+    "commit": "0000000000000000000000000000000000000000",
+    "dirty": false
+  },
+  "versions": {
+    "dataset": null,
+    "dataset_manifest": null,
+    "labels": "vehicle-labels-v1",
+    "model_registry": "vehicle-model-registry-v1",
+    "vehicle_config": "vehicle-analytics-m3",
+    "database_schema": 4
+  },
+  "artifact_hashes": [],
+  "model_delivery": {
+    "status": "pending",
+    "evidence_path": null
+  },
+  "performance": {
+    "status": "pending",
+    "duration_minutes": 0,
+    "queue_growth_detected": null,
+    "cameras": [],
+    "evidence_path": null
+  },
+  "latency": {
+    "status": "pending",
+    "attribute_stable_p95_ms": null,
+    "event_persist_p95_ms": null,
+    "evidence_path": null
+  },
+  "stability": {
+    "status": "pending",
+    "duration_hours": 0,
+    "crashes": 0,
+    "gpu_memory_growth_detected": null,
+    "unbounded_reconnect_detected": null,
+    "stale_run_results_detected": null,
+    "evidence_path": null
+  },
+  "idempotency": {
+    "status": "pending",
+    "duplicate_final_events": null,
+    "evidence_path": null
+  },
+  "fault_drills": {
+    "rtsp_disconnect": {"status": "pending", "evidence_path": null},
+    "postgresql_unavailable": {"status": "pending", "evidence_path": null},
+    "redis_restart": {"status": "pending", "evidence_path": null},
+    "callback_5xx": {"status": "pending", "evidence_path": null},
+    "worker_restart": {"status": "pending", "evidence_path": null}
+  },
+  "rollback": {
+    "database_backup_restore": "pending",
+    "previous_binary_retained": "pending",
+    "previous_config_retained": "pending",
+    "previous_engine_retained": "pending",
+    "rollback_drill": "pending",
+    "evidence_path": null
+  },
+  "notes": [
+    "真实模型、双路性能、8小时稳定性和故障演练尚未执行。"
+  ]
+}

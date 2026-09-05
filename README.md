@@ -6,17 +6,17 @@ Car Detect（项目代号 VCAS，Vehicle Cascade Analytics Service）是一个�
 
 ## 当前状态
 
-当前仓库处于 **M4 存储与 API 已实现、等待集成补验阶段**；M2R 的真实模型交付项继续等待云端训练产物。
+当前仓库处于 **M5 部署与验收框架已实现、等待真实环境验收阶段**；M2R 的真实模型交付项继续等待云端训练产物。
 
 - 基线来源：`guagua-paopao/vision_project`
 - 基线提交：`c9f5000`
 - 导入方式：压缩为 `car_detect/main` 的单个初始提交
 - 复用范围：RTSP FrameHub、Camera Pipeline、有界推理池、任务控制、PostgreSQL、可靠回调和可观测性
 - 迁移原则：车辆业务使用独立 Processor 和数据模型，不在人物处理器中继续堆叠分支
-- 当前实现：M3 级联运行时、M2R TensorRT Adapter/交付门禁、M4 车辆事件存储与只读 API
-- 暂缓验收：一次性 PostgreSQL 集成测试，以及真实 ONNX/Engine、SHA256、模型卡和精度回归
+- 当前实现：M3 级联运行时、M2R TensorRT Adapter/交付门禁、M4 车辆事件存储/API、M5 发布证据与打包门禁
+- 暂缓验收：一次性 PostgreSQL 集成测试，以及真实 ONNX/Engine、SHA256、模型卡、精度、双路性能和 8 小时稳定性回归
 
-基线中的人物、Pose 和 People Flow 代码暂时作为可构建参考保留；车辆模块完成等价替换后再逐步删除。历史阶段日志、旧性能报告、旧 Postman 集合和机器相关 TensorRT Engine 不进入新仓库。
+人物、姿态估计和人流统计链路已在车辆模块完成等价替换后删除；服务端、Worker、配置、数据库迁移和测试现在只保留车辆分析与通用摄像头基础设施。历史阶段日志、旧性能报告、旧 Postman 集合和机器相关 TensorRT Engine 不进入新仓库。
 
 ## MVP 范围
 
@@ -67,7 +67,6 @@ src/          业务、运行时与服务端实现
 tests/        单元、契约和集成测试
 tools/        Mock 与辅助验证工具
 web/          管理端
-qt_client/    Qt 管理客户端
 ```
 
 模型和运行产物不提交到 Git：
@@ -92,6 +91,7 @@ qt_client/    Qt 管理客户端
 - [车辆级联运行时](docs/runtime/VEHICLE_CASCADE_RUNTIME.md)
 - [车辆事件 API](docs/api/VEHICLE_API.md)
 - [车辆事件存储设计](docs/storage/VEHICLE_EVENT_STORAGE.md)
+- [车辆发布与验收](docs/operations/VEHICLE_RELEASE_ACCEPTANCE.md)
 - [现有架构参考](docs/ARCHITECTURE.md)
 - [Camera API](docs/CAMERA_FRAME_TASK_API.md)
 - [部署、监控、故障与回滚](docs/CAMERA_FRAME_TASK_OPERATIONS.md)
@@ -110,7 +110,7 @@ qt_client/    Qt 管理客户端
 
 ## 构建环境
 
-基线验证环境为 Windows x64、MSVC、Ninja、CUDA、TensorRT、OpenCV、Redis、PostgreSQL、Qt 和 vcpkg。依赖版本及路径应通过本机 CMake Preset 或脚本参数提供，不提交本机绝对路径。
+基线验证环境为 Windows x64、MSVC、Ninja、CUDA、TensorRT、OpenCV、Redis、PostgreSQL 和 vcpkg。依赖版本及路径应通过本机 CMake Preset 或脚本参数提供，不提交本机绝对路径。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build_backend.ps1 `

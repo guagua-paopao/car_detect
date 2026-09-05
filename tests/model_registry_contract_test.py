@@ -52,6 +52,16 @@ def main() -> None:
 
     false_deployment = copy.deepcopy(registry)
     false_deployment["artifacts"][1]["delivery_status"] = "deployed"
+    false_deployment["artifacts"][1]["files"]["onnx_sha256"] = None
+    false_deployment["artifacts"][1]["files"]["engine_sha256"] = None
+    for field in (
+        "dataset_version",
+        "training_run_id",
+        "code_commit",
+        "model_card_path",
+        "metrics_path",
+    ):
+        false_deployment["artifacts"][1]["provenance"][field] = None
     require_error(validate_registry(false_deployment, labels, runtime), "requires onnx_sha256")
     require_error(validate_registry(false_deployment, labels, runtime), "complete provenance")
     require_error(validate_registry(false_deployment, labels, runtime), "requires engine_sha256")
@@ -61,7 +71,7 @@ def main() -> None:
     require_error(validate_registry(bad_output, labels, runtime), "output_names")
 
     drifted_runtime = copy.deepcopy(runtime)
-    drifted_runtime["models"]["vehicle_attribute"]["input_size"] = 256
+    drifted_runtime["models"]["vehicle_attribute"]["input_size"] = 224
     require_error(validate_registry(registry, labels, drifted_runtime), "input_size")
 
     header = (ROOT / "include" / "server" / "vehicle_model_contract.h").read_text(

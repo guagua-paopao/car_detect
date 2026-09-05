@@ -27,6 +27,7 @@
 #include <limits>
 #include <set>
 #include <sstream>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -553,7 +554,11 @@ json algorithmRuntimeJson(
             {"replaced_jobs", runtime.inference_replaced_jobs},
             {"processed_jobs", runtime.inference_processed_jobs},
             {"failed_jobs", runtime.inference_failed_jobs},
-            {"stale_results", runtime.inference_stale_results}
+            {"stale_results", runtime.inference_stale_results},
+            {"pending_result_jobs", runtime.inference_pending_result_jobs},
+            {"maximum_pending_result_jobs",
+                runtime.inference_maximum_pending_result_jobs},
+            {"handled_result_jobs", runtime.inference_handled_result_jobs}
         }},
         {"processor", {
             {"running", runtime.processor_running},
@@ -562,6 +567,30 @@ json algorithmRuntimeJson(
             {"persisted_alerts", runtime.processor_persisted_alerts},
             {"duplicate_alerts", runtime.processor_duplicate_alerts},
             {"failed_frames", runtime.processor_failed_frames}
+        }},
+        {"attribute_scheduler", {
+            {"running", runtime.attribute_scheduler_running},
+            {"requests", runtime.attribute_scheduler_requests},
+            {"completed_requests",
+                runtime.attribute_scheduler_completed_requests},
+            {"failed_requests", runtime.attribute_scheduler_failed_requests},
+            {"batches", runtime.attribute_scheduler_batches},
+            {"crops", runtime.attribute_scheduler_crops},
+            {"pending_requests",
+                runtime.attribute_scheduler_pending_requests},
+            {"maximum_pending_requests",
+                runtime.attribute_scheduler_maximum_pending_requests},
+            {"pending_crops", runtime.attribute_scheduler_pending_crops},
+            {"maximum_pending_crops",
+                runtime.attribute_scheduler_maximum_pending_crops},
+            {"mean_queue_wait_ms",
+                runtime.attribute_scheduler_mean_queue_wait_ms},
+            {"p95_queue_wait_ms",
+                runtime.attribute_scheduler_p95_queue_wait_ms},
+            {"p99_queue_wait_ms",
+                runtime.attribute_scheduler_p99_queue_wait_ms},
+            {"maximum_queue_wait_ms",
+                runtime.attribute_scheduler_maximum_queue_wait_ms}
         }},
         {"callbacks", {
             {"configured", runtime.callbacks_configured},
@@ -1437,10 +1466,10 @@ crow::response CameraTaskHttpController::taskStatus(
     const bool analysis_stale = !hot_ok || hot.analysis_last_update_ms <= 0 ||
         nowMs() - hot.analysis_last_update_ms >
             std::max(5000, config_.camera_hub.status_update_interval_ms * 3);
-    auto security_state = hot_ok
-        ? json::parse(hot.security_state_json, nullptr, false)
+    auto analysis_state = hot_ok
+        ? json::parse(hot.analysis_state_json, nullptr, false)
         : json(nullptr);
-    if (security_state.is_discarded()) security_state = json::object();
+    if (analysis_state.is_discarded()) analysis_state = json::object();
     const long long pipeline_started_at_ms = hot_ok && hot.pipeline_started_at_ms > 0
         ? hot.pipeline_started_at_ms : run.start_time_ms;
     const long long pipeline_thread_age_ms = pipeline_started_at_ms > 0
@@ -1488,11 +1517,6 @@ crow::response CameraTaskHttpController::taskStatus(
             {"infer_fps", hot_ok ? hot.infer_fps : 0.0},
             {"last_inference_ms", hot_ok ? hot.last_inference_ms : 0.0},
             {"frame_count", hot_ok ? hot.analysis_frame_count : 0},
-            {"initial_occupancy", hot_ok ? hot.initial_occupancy : 0},
-            {"in_count", hot_ok ? hot.in_count : 0},
-            {"out_count", hot_ok ? hot.out_count : 0},
-            {"occupancy", hot_ok ? hot.occupancy : 0},
-            {"live_persons", hot_ok ? hot.live_persons : 0},
             {"reconnect_count", hot_ok ? hot.analysis_reconnect_count : 0},
             {"warmup_frames_remaining", hot_ok ? hot.warmup_frames_remaining : 0},
             {"snapshot_relative_path", hot_ok
@@ -1502,7 +1526,7 @@ crow::response CameraTaskHttpController::taskStatus(
             {"storage_degraded", hot_ok && hot.analysis_storage_degraded},
             {"snapshot_degraded", hot_ok && hot.analysis_snapshot_degraded},
             {"last_update_ms", hot_ok ? hot.analysis_last_update_ms : 0},
-            {"security", security_state}
+            {"results", analysis_state}
         }},
         {"error_code", hot_ok ? hot.error_code : run.error_code},
         {"error", (hot_ok ? hot.error_code : run.error_code).empty()
@@ -1615,16 +1639,24 @@ crow::response CameraTaskHttpController::analysisSnapshot(
         return errorResponse(
             404, "ANALYSIS_SNAPSHOT_NOT_READY", request_id);
     }
-    std::ifstream input(resolved, std::ios::binary);
     std::string bytes;
-    bytes.assign(
-        std::istreambuf_iterator<char>(input),
-        std::istreambuf_iterator<char>());
-    if (bytes.size() < 4 ||
-        static_cast<unsigned char>(bytes[0]) != 0xff ||
-        static_cast<unsigned char>(bytes[1]) != 0xd8 ||
-        static_cast<unsigned char>(bytes[bytes.size() - 2]) != 0xff ||
-        static_cast<unsigned char>(bytes.back()) != 0xd9) {
+    bool complete_jpeg = false;
+    for (int attempt = 0; attempt < 5 && !complete_jpeg; ++attempt) {
+        bytes.clear();
+        std::ifstream input(resolved, std::ios::binary);
+        bytes.assign(
+            std::istreambuf_iterator<char>(input),
+            std::istreambuf_iterator<char>());
+        complete_jpeg = bytes.size() >= 4 &&
+            static_cast<unsigned char>(bytes[0]) == 0xff &&
+            static_cast<unsigned char>(bytes[1]) == 0xd8 &&
+            static_cast<unsigned char>(bytes[bytes.size() - 2]) == 0xff &&
+            static_cast<unsigned char>(bytes.back()) == 0xd9;
+        if (!complete_jpeg && attempt < 4) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(8));
+        }
+    }
+    if (!complete_jpeg) {
         return errorResponse(
             404, "ANALYSIS_SNAPSHOT_NOT_READY", request_id);
     }

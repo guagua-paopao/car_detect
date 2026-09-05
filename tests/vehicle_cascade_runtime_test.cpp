@@ -33,6 +33,31 @@ std::shared_ptr<OwnedImage> checkerImage(int width, int height) {
     return image;
 }
 
+std::shared_ptr<OwnedI420Image> checkerI420(int width, int height) {
+    auto bytes = std::make_shared<std::vector<std::uint8_t>>(
+        static_cast<std::size_t>(width) * height * 3U / 2U,
+        128);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            (*bytes)[static_cast<std::size_t>(y) * width + x] =
+                (x + y) % 2 == 0 ? 32 : 224;
+        }
+    }
+    auto image = std::make_shared<OwnedI420Image>();
+    image->bytes = bytes;
+    image->width = width;
+    image->height = height;
+    image->y_offset = 0;
+    image->u_offset = static_cast<std::size_t>(width) * height;
+    image->v_offset = image->u_offset +
+        static_cast<std::size_t>(width) * height / 4U;
+    image->y_stride_bytes = width;
+    image->u_stride_bytes = width / 2;
+    image->v_stride_bytes = width / 2;
+    assert(image->valid());
+    return image;
+}
+
 VehicleDetectionResult detectionFrame(
     std::uint64_t generation,
     std::int64_t sequence,
@@ -192,6 +217,49 @@ void testIndependentFusion() {
     assert(snapshot && snapshot->stable());
     assert(snapshot->color.label == "white");
 
+    // One contradictory observation must not flip a confirmed label; three
+    // consecutive threshold-clearing reverse observations may switch it.
+    assert(aggregator.add(attributeResult(42, 5, 1.0f, "suv", "black"), error));
+    snapshot = aggregator.snapshot(key);
+    assert(snapshot && snapshot->color.label == "white");
+    assert(aggregator.add(attributeResult(42, 6, 1.0f, "suv", "black"), error));
+    snapshot = aggregator.snapshot(key);
+    assert(snapshot && snapshot->color.label == "unknown");
+    assert(!snapshot->color.stable);
+    assert(aggregator.add(attributeResult(42, 7, 1.0f, "suv", "black"), error));
+    snapshot = aggregator.snapshot(key);
+    assert(snapshot && snapshot->color.label == "black");
+    assert(aggregator.metrics().label_switches == 1);
+
+    // Alternating strong conflicts fail closed and cannot satisfy the
+    // same-label consecutive-confirmation requirement.
+    VehicleTrackAttributeAggregator conflict_aggregator({3, 5, 0.75f, 0.70f});
+    const VehicleTrackKey conflict_key{"gate_01", "run_01", 7, 44};
+    assert(conflict_aggregator.add(attributeResult(44, 1, 1.0f, "suv", "white"), error));
+    assert(conflict_aggregator.add(attributeResult(44, 2, 1.0f, "suv", "white"), error));
+    assert(conflict_aggregator.add(attributeResult(44, 3, 1.0f, "suv", "white"), error));
+    assert(conflict_aggregator.add(attributeResult(44, 4, 1.0f, "sedan", "black"), error));
+    assert(conflict_aggregator.add(attributeResult(44, 5, 1.0f, "mpv", "red"), error));
+    const auto conflict_snapshot = conflict_aggregator.snapshot(conflict_key);
+    assert(conflict_snapshot && conflict_snapshot->body_type.label == "unknown");
+    assert(conflict_snapshot->color.label == "unknown");
+    assert(conflict_aggregator.metrics().label_switches == 0);
+
+    // A trusted high-quality label must not be hidden or replaced by several
+    // low-quality contradictory frames.
+    VehicleTrackAttributeAggregator low_quality_aggregator({3, 5, 0.75f, 0.70f});
+    const VehicleTrackKey low_quality_key{"gate_01", "run_01", 7, 43};
+    assert(low_quality_aggregator.add(attributeResult(43, 1, 1.0f, "suv", "white"), error));
+    assert(low_quality_aggregator.add(attributeResult(43, 2, 1.0f, "suv", "white"), error));
+    assert(low_quality_aggregator.add(attributeResult(43, 3, 1.0f, "suv", "white"), error));
+    assert(low_quality_aggregator.add(attributeResult(43, 4, 0.10f, "sedan", "black"), error));
+    assert(low_quality_aggregator.add(attributeResult(43, 5, 0.10f, "sedan", "black"), error));
+    assert(low_quality_aggregator.add(attributeResult(43, 6, 0.10f, "sedan", "black"), error));
+    const auto low_quality_snapshot = low_quality_aggregator.snapshot(low_quality_key);
+    assert(low_quality_snapshot && low_quality_snapshot->body_type.label == "suv");
+    assert(low_quality_snapshot->color.label == "white");
+    assert(low_quality_aggregator.metrics().label_switches == 0);
+
     auto stale = attributeResult(42, 4, 1.0f, "suv", "white");
     assert(!aggregator.add(stale, error));
     assert(error.find("strictly increasing") != std::string::npos);
@@ -234,6 +302,22 @@ void testCascadeRuntime() {
     assert(batch.size() == 1);
     assert(batch.front().crop && batch.front().crop->valid());
 
+    const auto i420 = checkerI420(200, 120);
+    assert(runtime.queueCrop(
+        i420,
+        track_id,
+        2,
+        0.10f,
+        false,
+        assessment,
+        error));
+    assert(assessment.eligible);
+    const auto i420_batch = runtime.takeAttributeBatch(16);
+    assert(i420_batch.size() == 1);
+    assert(!i420_batch.front().crop);
+    assert(i420_batch.front().i420_frame == i420);
+    assert(i420_batch.front().source_box.valid());
+
     std::vector<VehicleAttributeResult> results;
     results.push_back(attributeResult(track_id, 1, 0.90f, "suv", "white"));
     results.push_back(attributeResult(track_id, 2, 0.90f, "suv", "white"));
@@ -245,7 +329,7 @@ void testCascadeRuntime() {
     assert(track);
     assert(track->state == VehicleTrackState::AttributeStable);
     assert(runtime.trackerMetrics().tracks_confirmed == 1);
-    assert(runtime.attributeQueueMetrics().accepted == 1);
+    assert(runtime.attributeQueueMetrics().accepted == 2);
     assert(runtime.aggregatorMetrics().accepted == 3);
 
     const auto final = runtime.finalizeTrack(track_id);

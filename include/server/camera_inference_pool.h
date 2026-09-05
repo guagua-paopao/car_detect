@@ -48,6 +48,9 @@ struct CameraInferencePoolSnapshot {
     long long processed_jobs = 0;
     long long failed_jobs = 0;
     long long stale_results = 0;
+    std::size_t pending_result_jobs = 0;
+    std::size_t maximum_pending_result_jobs = 0;
+    long long handled_result_jobs = 0;
 };
 
 using CameraModelRunnerFactory =
@@ -93,6 +96,10 @@ private:
         CameraFrameJob job;
         std::uint64_t generation = 0;
     };
+    struct QueuedResult {
+        CameraInferenceResult result;
+        std::uint64_t generation = 0;
+    };
     struct WorkerShard {
         explicit WorkerShard(int value) : worker_id(value) {}
         int worker_id = 0;
@@ -105,6 +112,13 @@ private:
         std::map<std::string, ActiveGeneration> active;
         std::map<std::string, std::uint64_t> generation_counters;
         std::thread thread;
+        std::mutex result_mutex;
+        std::condition_variable result_ready;
+        std::condition_variable result_capacity_available;
+        std::deque<QueuedResult> result_queue;
+        std::thread result_thread;
+        bool result_stop_requested = false;
+        std::size_t maximum_result_queue_depth = 0;
     };
 
     std::size_t assignShard(const std::string& task_id);
@@ -116,6 +130,11 @@ private:
         std::size_t shard_index) noexcept;
     void clearShardAssignments() noexcept;
     void workerLoop(WorkerShard& shard) noexcept;
+    bool dispatchResult(
+        WorkerShard& shard,
+        CameraInferenceResult result,
+        std::uint64_t generation) noexcept;
+    void resultLoop(WorkerShard& shard) noexcept;
     void reportStartup(bool success, const std::string& error);
     void stopWorkersNoexcept() noexcept;
 
@@ -130,6 +149,7 @@ private:
     std::atomic<long long> processed_jobs_{ 0 };
     std::atomic<long long> failed_jobs_{ 0 };
     std::atomic<long long> stale_results_{ 0 };
+    std::atomic<long long> handled_result_jobs_{ 0 };
     mutable std::mutex assignment_mutex_;
     std::map<std::string, std::size_t> shard_assignments_;
     std::vector<std::size_t> shard_assignment_loads_;

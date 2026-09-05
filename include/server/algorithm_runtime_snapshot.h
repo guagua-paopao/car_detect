@@ -24,6 +24,9 @@ struct AlgorithmRuntimeSnapshot {
     long long inference_processed_jobs = 0;
     long long inference_failed_jobs = 0;
     long long inference_stale_results = 0;
+    long long inference_pending_result_jobs = 0;
+    long long inference_maximum_pending_result_jobs = 0;
+    long long inference_handled_result_jobs = 0;
 
     bool processor_running = false;
     long long processor_active_sessions = 0;
@@ -31,6 +34,21 @@ struct AlgorithmRuntimeSnapshot {
     long long processor_persisted_alerts = 0;
     long long processor_duplicate_alerts = 0;
     long long processor_failed_frames = 0;
+
+    bool attribute_scheduler_running = false;
+    long long attribute_scheduler_requests = 0;
+    long long attribute_scheduler_completed_requests = 0;
+    long long attribute_scheduler_failed_requests = 0;
+    long long attribute_scheduler_batches = 0;
+    long long attribute_scheduler_crops = 0;
+    long long attribute_scheduler_pending_requests = 0;
+    long long attribute_scheduler_maximum_pending_requests = 0;
+    long long attribute_scheduler_pending_crops = 0;
+    long long attribute_scheduler_maximum_pending_crops = 0;
+    double attribute_scheduler_mean_queue_wait_ms = 0.0;
+    double attribute_scheduler_p95_queue_wait_ms = 0.0;
+    double attribute_scheduler_p99_queue_wait_ms = 0.0;
+    double attribute_scheduler_maximum_queue_wait_ms = 0.0;
 
     bool callbacks_configured = false;
     bool callback_running = false;

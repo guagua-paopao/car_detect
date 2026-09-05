@@ -1,5 +1,5 @@
 {
-  "name": "four-stage-qt-demo",
+  "name": "four-stage-vehicle-analytics",
   "version-string": "1.0.0",
   "dependencies": [
     "crow",

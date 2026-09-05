@@ -10,16 +10,14 @@
 #include <vector>
 
 #include <nlohmann/json.hpp>
-#include <openssl/sha.h>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 
-#include "business/line_crossing_counter.h"
-#include "business/person_detector_adapter.h"
-#include "business/person_tracker.h"
-#include "business/people_flow_renderer.h"
-#include "business/security_live_pipeline.h"
-#include "business/security_overlay_renderer.h"
+#include "business/vehicle_event_publisher.h"
 #include "server/camera_task_api_control.h"
+#include "server/vehicle_runtime_loader.h"
+#include "server/vehicle_tensorrt_adapters.h"
+#include "server/vehicle_attribute_batch_scheduler.h"
 
 namespace yolo11_server {
 
@@ -32,258 +30,25 @@ long long wallNowMs() {
         std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-std::string sha256Hex(const std::string& value) {
-    unsigned char digest[SHA256_DIGEST_LENGTH]{};
-    SHA256(reinterpret_cast<const unsigned char*>(value.data()), value.size(), digest);
-    std::ostringstream output;
-    output << std::hex << std::setfill('0');
-    for (const unsigned char byte : digest) output << std::setw(2) << static_cast<int>(byte);
-    return output.str();
-}
-
-bool contains(const std::set<std::string>& values, const std::string& value) {
-    return values.find(value) != values.end();
-}
-
-bool wantsSecurityCategory(
-    const std::set<std::string>& algorithms,
-    SecurityEventCategory category
-) {
-    if (contains(algorithms, "security")) return true;
-    switch (category) {
-    case SecurityEventCategory::Zone:
-        return contains(algorithms, "electronic_fence");
-    case SecurityEventCategory::PoseAction:
-        return contains(algorithms, "pose_action");
-    case SecurityEventCategory::TemporalAction:
-        return contains(algorithms, "temporal_action");
-    }
-    return false;
-}
-
-std::string effectiveConfigVersion(
-    const AppConfig& config,
-    const CameraFrameJob& job
-) {
-    if (!job.analysis_config_version.empty()) {
-        return job.analysis_config_version;
-    }
-    return config.people_flow.config_version.empty()
-        ? job.algorithm_profile
-        : config.people_flow.config_version;
-}
-
-json securityEventJson(const SecurityEvent& event) {
-    return {
-        { "event_id", event.event_id }, { "session_id", event.session_id },
-        { "camera_id", event.camera_id }, { "track_id", event.track_id },
-        { "category", securityEventCategoryName(event.category) },
-        { "event_type", event.event_type }, { "zone_id", event.zone_id },
-        { "start_time_ms", event.start_time_ms }, { "end_time_ms", event.end_time_ms },
-        { "event_time_ms", event.event_time_ms }, { "confidence", event.confidence },
-        { "severity", event.severity }, { "demo_classifier", event.demo_classifier }
-    };
-}
-
-json activeActionsJson(
-    const std::map<std::int64_t, std::vector<std::string>>& actions
-) {
-    json items = json::array();
-    for (const auto& [track_id, labels] : actions) {
-        items.push_back({ { "track_id", track_id }, { "labels", labels } });
-    }
-    return items;
-}
-
-json securityFrameJson(
-    const SecurityFrameResult& frame,
-    const PeopleFlowSecuritySection& config,
-    const std::string& run_id,
-    const std::string& task_id
-) {
-    int inside_count = 0;
-    json zone_statuses = json::array();
-    for (const TrackZoneStatus& status : frame.zone_statuses) {
-        if (status.inside) ++inside_count;
-        zone_statuses.push_back({
-            { "zone_id", status.zone_id }, { "track_id", status.track_id },
-            { "inside", status.inside }, { "entered_at_ms", status.entered_at_ms },
-            { "dwell_ms", status.dwell_ms },
-            { "dwell_alarm_emitted", status.dwell_alarm_emitted }
-        });
-    }
-    json tracks = json::array();
-    for (const TrackAnalyticsSnapshot& analytics : frame.track_analytics) {
-        tracks.push_back({
-            { "track_id", analytics.track_id },
-            { "speed_px_s", analytics.instantaneous_speed_px_s },
-            { "average_speed_px_s", analytics.average_speed_px_s },
-            { "distance_px", analytics.cumulative_distance_px },
-            { "stationary_ms", analytics.stationary_ms },
-            { "stationary", analytics.stationary },
-            { "loitering", analytics.loitering }
-        });
-    }
-    json events = json::array();
-    for (auto it = frame.recent_events.rbegin();
-         it != frame.recent_events.rend(); ++it) {
-        events.push_back(securityEventJson(*it));
-    }
-    return {
-        { "success", true }, { "mode", "unified_camera_pipeline" },
-        { "production_action_model", false }, { "run_id", run_id },
-        { "camera_id", task_id }, { "timestamp_ms", frame.timestamp_ms },
-        { "stages", {
-            { "phase1", { { "name", "electronic_fence" }, { "ready", true },
-                { "zone_count", config.zones.size() }, { "inside_count", inside_count },
-                { "statuses", zone_statuses } } },
-            { "phase2", { { "name", "tracking_and_analytics" }, { "ready", true },
-                { "alpha_beta_filter", true }, { "track_count", tracks.size() },
-                { "tracks", tracks } } },
-            { "phase3", { { "name", "pose_rule_actions" }, { "ready", true },
-                { "model", "yolo11-pose-tensorrt" },
-                { "pose_count", frame.poses.size() },
-                { "active_actions", activeActionsJson(frame.active_pose_actions) } } },
-            { "phase4", { { "name", "temporal_action_demo" }, { "ready", true },
-                { "classifier", "feature-threshold-demo" },
-                { "demo_classifier", true },
-                { "label", config.temporal_demo_label },
-                { "active_actions", activeActionsJson(frame.active_temporal_actions) } } }
-        } },
-        { "events", events }
-    };
-}
-
-json inactiveSecurityState(
-    long long timestamp_ms,
-    const std::string& run_id,
-    const std::string& task_id
-) {
-    return {
-        { "success", true }, { "mode", "unified_camera_pipeline" },
-        { "production_action_model", false }, { "run_id", run_id },
-        { "camera_id", task_id }, { "timestamp_ms", timestamp_ms },
-        { "stages", {
-            { "phase1", { { "name", "electronic_fence" }, { "ready", false } } },
-            { "phase2", { { "name", "tracking_and_analytics" }, { "ready", true } } },
-            { "phase3", { { "name", "pose_rule_actions" }, { "ready", false } } },
-            { "phase4", { { "name", "temporal_action_demo" }, { "ready", false },
-                { "demo_classifier", true } } }
-        } },
-        { "events", json::array() }
-    };
-}
-
-SecurityAlertEventRecord lineAlert(
-    const AppConfig& config,
-    const CameraInferenceResult& inference,
-    const CrossingEvent& event
-) {
-    const std::string identity = inference.job.task_id + "|" + inference.job.run_id +
-        "|people_flow|" + event.event_id;
-    SecurityAlertEventRecord alert;
-    alert.event_id = "ae_" + sha256Hex(identity);
-    alert.task_id = inference.job.task_id;
-    alert.run_id = inference.job.run_id;
-    alert.camera_profile = inference.job.camera_profile;
-    alert.event_type = event.direction == "IN" ? "PEOPLE_FLOW_IN" : "PEOPLE_FLOW_OUT";
-    alert.category = "people_flow";
-    alert.severity = 1;
-    alert.confidence = std::clamp(event.confidence, 0.0, 1.0);
-    alert.track_id = event.track_id;
-    alert.occurred_at_ms = event.event_time_ms;
-    alert.algorithm_profile = inference.job.algorithm_profile;
-    alert.model_name = inference.output.model_type.empty()
-        ? config.model.type : inference.output.model_type;
-    alert.config_version = effectiveConfigVersion(config, inference.job);
-    alert.payload_json = json{
-        { "schema_version", "1.0" },
-        { "direction", event.direction },
-        { "line_id", event.line_id },
-        { "point_x_norm", event.point_x_norm },
-        { "point_y_norm", event.point_y_norm },
-        { "source_sequence", inference.job.source_sequence }
-    }.dump();
-    alert.fingerprint = sha256Hex(identity);
-    alert.delivery_status = inference.job.callback_profile.empty()
-        ? "not_scheduled" : "pending";
-    alert.created_at_ms = wallNowMs();
-    return alert;
-}
-
-SecurityAlertEventRecord securityAlert(
-    const AppConfig& config,
-    const CameraInferenceResult& inference,
-    const SecurityEvent& event
-) {
-    const std::string category = securityEventCategoryName(event.category);
-    const std::string identity = inference.job.task_id + "|" + inference.job.run_id +
-        "|" + category + "|" + event.event_id;
-    SecurityAlertEventRecord alert;
-    alert.event_id = "ae_" + sha256Hex(identity);
-    alert.task_id = inference.job.task_id;
-    alert.run_id = inference.job.run_id;
-    alert.camera_profile = inference.job.camera_profile;
-    alert.event_type = event.event_type;
-    alert.category = category;
-    alert.severity = std::clamp(event.severity, 1, 5);
-    alert.confidence = std::clamp(event.confidence, 0.0, 1.0);
-    alert.track_id = event.track_id;
-    alert.occurred_at_ms = event.event_time_ms;
-    alert.algorithm_profile = inference.job.algorithm_profile;
-    alert.model_name = inference.output.model_type.empty()
-        ? config.model.type : inference.output.model_type;
-    alert.config_version = effectiveConfigVersion(config, inference.job);
-    alert.demo_classifier = event.demo_classifier;
-    alert.payload_json = json{
-        { "schema_version", "1.0" },
-        { "zone_id", event.zone_id },
-        { "start_time_ms", event.start_time_ms },
-        { "end_time_ms", event.end_time_ms },
-        { "source_sequence", inference.job.source_sequence }
-    }.dump();
-    alert.fingerprint = sha256Hex(identity);
-    alert.delivery_status = inference.job.callback_profile.empty()
-        ? "not_scheduled" : "pending";
-    alert.created_at_ms = wallNowMs();
-    return alert;
-}
 
 }  // namespace
 
-struct CameraAlgorithmProcessor::Session {
-    Session(const AppConfig& config, const CameraFrameJob& job)
+
+struct CameraAlgorithmProcessor::VehicleSession {
+    VehicleSession(
+        const AppConfig& config,
+        const CameraFrameJob& job,
+        const VehicleRuntimeAssets& assets,
+        std::size_t attribute_runner_index_value)
         : run_id(job.run_id),
-        algorithm_profile(job.algorithm_profile),
-        callback_profile(job.callback_profile),
-        config_version(effectiveConfigVersion(config, job)),
-        initial_occupancy(std::max(0LL, job.initial_occupancy)),
-        snapshot_fps(job.snapshot_fps > 0
-            ? job.snapshot_fps : config.people_flow.snapshot_fps),
-        algorithm_parameters_json(job.algorithm_parameters_json.empty()
-            ? "{}" : job.algorithm_parameters_json),
-        algorithms(job.algorithms.begin(), job.algorithms.end()),
-        adapter(config.people_flow),
-        tracker(config.people_flow.tracker),
-        counter(
-            config.people_flow.counting,
-            job.run_id,
-            job.task_id,
-            config_version,
-            initial_occupancy),
-        renderer(config.people_flow),
-        reconnect_count(job.reconnect_count),
-        warmup_remaining(config.people_flow.warmup_frames_after_reconnect) {
-        const bool needs_security = contains(algorithms, "security") ||
-            contains(algorithms, "electronic_fence") ||
-            contains(algorithms, "pose_action") ||
-            contains(algorithms, "temporal_action");
-        if (needs_security && config.people_flow.security.enabled) {
-            security = std::make_unique<SecurityLivePipeline>(
-                config.people_flow.security, job.run_id, job.task_id);
-            security_renderer = std::make_unique<SecurityOverlayRenderer>(
-                config.people_flow.security);
-        }
+          camera_profile(job.camera_profile),
+          callback_profile(job.callback_profile),
+          config_version(assets.config_version),
+          attribute_runner_index(attribute_runner_index_value),
+          runtime(assets.cascade) {
+        runtime.startRun(job.task_id, job.run_id, 1);
+        const int snapshot_fps = job.snapshot_fps > 0
+            ? job.snapshot_fps : config.vehicle_analytics.snapshot_fps;
         snapshot_interval_frames = std::max(1, static_cast<int>(
             std::max(0.1, job.target_infer_fps) /
             std::max(1, snapshot_fps)));
@@ -299,38 +64,34 @@ struct CameraAlgorithmProcessor::Session {
     }
 
     std::string run_id;
-    std::string algorithm_profile;
+    std::string camera_profile;
     std::string callback_profile;
     std::string config_version;
-    long long initial_occupancy = 0;
-    int snapshot_fps = 0;
-    std::string algorithm_parameters_json = "{}";
-    std::set<std::string> algorithms;
-    PersonDetectorAdapter adapter;
-    PersonTracker tracker;
-    LineCrossingCounter counter;
-    PeopleFlowRenderer renderer;
-    std::unique_ptr<SecurityLivePipeline> security;
-    std::unique_ptr<SecurityOverlayRenderer> security_renderer;
-    SecurityFrameResult security_frame;
+    std::size_t attribute_runner_index = 0;
+    VehicleCascadeRuntime runtime;
     std::filesystem::path snapshot_path;
     std::string snapshot_relative_path;
     int snapshot_interval_frames = 1;
     long long last_snapshot_frame = 0;
-    bool snapshot_degraded = false;
-    bool storage_degraded = false;
-    int reconnect_count = 0;
-    int warmup_remaining = 0;
     long long frame_count = 0;
+    long long last_persist_ms = 0;
     long long infer_window_start_ms = 0;
     long long infer_window_frames = 0;
     double infer_fps = 0.0;
-    double last_inference_ms = 0.0;
-    long long last_persist_ms = 0;
+    bool snapshot_degraded = false;
+    bool snapshot_pending = false;
+    bool storage_degraded = false;
+    bool active = true;
+    bool has_snapshot = false;
     CameraRunAnalysisResultRecord latest_result;
     CameraTaskRunHotStatus latest_hot;
-    bool has_snapshot = false;
-    bool active = true;
+    std::map<std::int64_t, VehicleAttributeResult> latest_candidates;
+    std::mutex mutex;
+};
+
+struct CameraAlgorithmProcessor::VehicleAttributeRunnerSlot {
+    std::unique_ptr<TensorRtVehicleAttributeRunner> runner;
+    std::size_t active_sessions = 0;
     std::mutex mutex;
 };
 
@@ -355,6 +116,87 @@ bool CameraAlgorithmProcessor::start(std::string& error) {
         return false;
     }
     if (!repository_->initialize(error)) return false;
+    const std::string model_type = config_.model.type;
+    vehicle_enabled_ = config_.vehicle_analytics.enabled &&
+        (model_type == "vehicle" || model_type == "vehicle_detection");
+    if (vehicle_enabled_) {
+        vehicle_assets_ = std::make_unique<VehicleRuntimeAssets>();
+        if (!loadVehicleRuntimeAssets(config_, *vehicle_assets_, error)) {
+            vehicle_assets_.reset();
+            return false;
+        }
+        const auto create_attribute_runner = [&]() {
+            TensorRtAttributeOptions options;
+            options.gpu_id = config_.model.gpu_id;
+            options.artifact_root = ".";
+            options.body_types = vehicle_assets_->body_types;
+            options.colors = vehicle_assets_->colors;
+            return std::make_unique<TensorRtVehicleAttributeRunner>(
+                std::move(options));
+        };
+        if (config_.vehicle_analytics.dynamic_batching) {
+            auto attribute_runner = create_attribute_runner();
+            if (!attribute_runner->initialize(
+                    vehicle_assets_->attributes, error)) {
+                vehicle_assets_.reset();
+                return false;
+            }
+            VehicleAttributeBatchSchedulerConfig scheduler_config;
+            scheduler_config.max_batch = vehicle_assets_->attribute_max_batch;
+            scheduler_config.max_pending_requests = 64;
+            scheduler_config.max_wait = std::chrono::milliseconds(2);
+            vehicle_attribute_scheduler_ =
+                std::make_unique<VehicleAttributeBatchScheduler>(
+                    scheduler_config, std::move(attribute_runner));
+            if (!vehicle_attribute_scheduler_->start(error)) {
+                vehicle_attribute_scheduler_.reset();
+                vehicle_assets_.reset();
+                return false;
+            }
+        }
+        else {
+            for (int index = 0;
+                 index < config_.vehicle_analytics.attribute_contexts;
+                 ++index) {
+                auto slot = std::make_unique<VehicleAttributeRunnerSlot>();
+                slot->runner = create_attribute_runner();
+                if (!slot->runner->initialize(
+                        vehicle_assets_->attributes, error)) {
+                    for (auto& created : vehicle_attribute_runners_) {
+                        created->runner->release();
+                    }
+                    vehicle_attribute_runners_.clear();
+                    vehicle_assets_.reset();
+                    return false;
+                }
+                vehicle_attribute_runners_.push_back(std::move(slot));
+            }
+        }
+        vehicle_event_publisher_ =
+            std::make_unique<VehicleEventPublisher>(repository_);
+        if (config_.vehicle_analytics.async_snapshots) {
+            snapshot_writer_ = std::make_unique<AnalysisSnapshotWriter>();
+            if (!snapshot_writer_->start(
+                    config_.vehicle_analytics.snapshot_writer_threads,
+                    static_cast<std::size_t>(
+                        config_.vehicle_analytics.snapshot_queue_capacity),
+                    error)) {
+                snapshot_writer_.reset();
+                vehicle_event_publisher_.reset();
+                if (vehicle_attribute_scheduler_) {
+                    vehicle_attribute_scheduler_->stop();
+                }
+                vehicle_attribute_scheduler_.reset();
+                for (auto& slot : vehicle_attribute_runners_) {
+                    if (slot && slot->runner) slot->runner->release();
+                }
+                vehicle_attribute_runners_.clear();
+                vehicle_assets_.reset();
+                vehicle_enabled_ = false;
+                return false;
+            }
+        }
+    }
     running_.store(true);
     return true;
 }
@@ -362,72 +204,497 @@ bool CameraAlgorithmProcessor::start(std::string& error) {
 void CameraAlgorithmProcessor::stop() noexcept {
     running_.store(false);
     try {
-        std::lock_guard<std::mutex> lock(sessions_mutex_);
-        for (const auto& entry : sessions_) {
-            std::lock_guard<std::mutex> session_lock(entry.second->mutex);
-            entry.second->active = false;
+        if (snapshot_writer_) snapshot_writer_->stop();
+        snapshot_writer_.reset();
+        {
+            std::lock_guard<std::mutex> vehicle_lock(vehicle_sessions_mutex_);
+            for (const auto& entry : vehicle_sessions_) {
+                std::lock_guard<std::mutex> session_lock(entry.second->mutex);
+                entry.second->active = false;
+            }
+            vehicle_sessions_.clear();
         }
-        sessions_.clear();
+        if (vehicle_attribute_scheduler_) vehicle_attribute_scheduler_->stop();
+        vehicle_attribute_scheduler_.reset();
+        for (auto& slot : vehicle_attribute_runners_) {
+            if (slot && slot->runner) slot->runner->release();
+        }
+        vehicle_attribute_runners_.clear();
+        vehicle_event_publisher_.reset();
+        vehicle_assets_.reset();
+        vehicle_enabled_ = false;
     }
     catch (...) {
     }
 }
 
-std::shared_ptr<CameraAlgorithmProcessor::Session> CameraAlgorithmProcessor::sessionFor(
-    const CameraFrameJob& job,
-    std::string& error
-) {
-    const std::set<std::string> supported(
-        config_.analysis.supported_algorithms.begin(),
-        config_.analysis.supported_algorithms.end());
-    for (const auto& algorithm : job.algorithms) {
-        if (!contains(supported, algorithm)) {
-            error = "UNSUPPORTED_ALGORITHM:" + algorithm;
-            return {};
-        }
-    }
-    const bool needs_security =
-        std::find_if(job.algorithms.begin(), job.algorithms.end(), [](const std::string& value) {
-            return value == "security" || value == "electronic_fence" ||
-                value == "pose_action" || value == "temporal_action";
-        }) != job.algorithms.end();
-    if (needs_security && !config_.people_flow.security.enabled) {
-        error = "SECURITY_ANALYTICS_DISABLED";
-        return {};
+
+bool CameraAlgorithmProcessor::handleVehicle(
+    const CameraInferenceResult& inference,
+    std::string& error) {
+    error.clear();
+    if (!vehicle_enabled_ || !vehicle_assets_ ||
+        (!vehicle_attribute_scheduler_ && vehicle_attribute_runners_.empty()) ||
+        !vehicle_event_publisher_) {
+        error = "VEHICLE_ANALYTICS_NOT_INITIALIZED";
+        return false;
     }
 
-    std::lock_guard<std::mutex> lock(sessions_mutex_);
-    const auto existing = sessions_.find(job.task_id);
-    if (existing != sessions_.end() && existing->second->run_id == job.run_id) {
-        if (existing->second->algorithm_profile != job.algorithm_profile ||
-            existing->second->callback_profile != job.callback_profile ||
-            existing->second->config_version !=
-                effectiveConfigVersion(config_, job) ||
-            existing->second->initial_occupancy !=
-                std::max(0LL, job.initial_occupancy) ||
-            existing->second->snapshot_fps !=
-                (job.snapshot_fps > 0
-                    ? job.snapshot_fps
-                    : config_.people_flow.snapshot_fps) ||
-            existing->second->algorithm_parameters_json !=
-                (job.algorithm_parameters_json.empty()
-                    ? "{}"
-                    : job.algorithm_parameters_json) ||
-            existing->second->algorithms !=
-                std::set<std::string>(job.algorithms.begin(), job.algorithms.end())) {
-            error = "ANALYSIS_DEFINITION_CHANGED_WITHIN_RUN";
-            return {};
+    std::shared_ptr<VehicleSession> session;
+    {
+        std::lock_guard<std::mutex> lock(vehicle_sessions_mutex_);
+        auto found = vehicle_sessions_.find(inference.job.task_id);
+        if (found != vehicle_sessions_.end() &&
+            found->second->run_id == inference.job.run_id) {
+            session = found->second;
         }
-        return existing->second;
+        else {
+            if (found != vehicle_sessions_.end()) {
+                std::lock_guard<std::mutex> old_lock(found->second->mutex);
+                found->second->active = false;
+                const auto old_index = found->second->attribute_runner_index;
+                if (old_index < vehicle_attribute_runners_.size() &&
+                    vehicle_attribute_runners_[old_index]->active_sessions > 0) {
+                    --vehicle_attribute_runners_[old_index]->active_sessions;
+                }
+                vehicle_sessions_.erase(found);
+            }
+            std::size_t attribute_runner_index = 0;
+            if (!vehicle_attribute_runners_.empty()) {
+                for (std::size_t index = 1;
+                     index < vehicle_attribute_runners_.size(); ++index) {
+                    if (vehicle_attribute_runners_[index]->active_sessions <
+                        vehicle_attribute_runners_[attribute_runner_index]
+                            ->active_sessions) {
+                        attribute_runner_index = index;
+                    }
+                }
+                ++vehicle_attribute_runners_[attribute_runner_index]
+                    ->active_sessions;
+            }
+            session = std::make_shared<VehicleSession>(
+                config_, inference.job, *vehicle_assets_,
+                attribute_runner_index);
+            vehicle_sessions_[inference.job.task_id] = session;
+        }
     }
-    if (existing != sessions_.end()) {
-        std::lock_guard<std::mutex> session_lock(existing->second->mutex);
-        existing->second->active = false;
-        sessions_.erase(existing);
+
+    CameraRunAnalysisResultRecord analysis_result;
+    CameraTaskRunHotStatus hot;
+    std::vector<VehicleTrackSnapshot> exited_tracks;
+    bool persist_analysis = false;
+    {
+        std::lock_guard<std::mutex> lock(session->mutex);
+        if (!session->active || session->run_id != inference.job.run_id) {
+            error = "STALE_VEHICLE_ANALYSIS_SESSION";
+            return false;
+        }
+
+        VehicleDetectionResult detections =
+            inference.output.vehicle_detection;
+        detections.camera_id = inference.job.task_id;
+        detections.run_id = inference.job.run_id;
+        detections.frame_sequence = static_cast<std::int64_t>(
+            inference.job.source_sequence);
+        detections.captured_at_ms = inference.job.capture_time_ms;
+        detections.metadata.run_generation = 1;
+
+        VehicleTrackingUpdate tracking;
+        if (!session->runtime.onDetections(detections, tracking, error)) {
+            return false;
+        }
+        exited_tracks = tracking.exited;
+
+        std::shared_ptr<OwnedI420Image> i420_frame;
+        if (inference.job.frame->i420.valid()) {
+            const auto& source = inference.job.frame->i420;
+            i420_frame = std::make_shared<OwnedI420Image>();
+            i420_frame->bytes = source.bytes;
+            i420_frame->width = source.width;
+            i420_frame->height = source.height;
+            i420_frame->y_offset = source.y_offset;
+            i420_frame->u_offset = source.u_offset;
+            i420_frame->v_offset = source.v_offset;
+            i420_frame->y_stride_bytes = source.y_stride_bytes;
+            i420_frame->u_stride_bytes = source.u_stride_bytes;
+            i420_frame->v_stride_bytes = source.v_stride_bytes;
+        }
+        ImageView frame_view;
+        if (!i420_frame) {
+            const auto& image = inference.job.frame->bgrImage();
+            frame_view = {
+                image.data,
+                image.cols,
+                image.rows,
+                image.channels(),
+                image.step,
+                ImagePixelFormat::Bgr8
+            };
+        }
+        for (const auto& track : tracking.active) {
+            if (track.state != VehicleTrackState::Confirmed &&
+                track.state != VehicleTrackState::AttributeCollecting) {
+                continue;
+            }
+            CropQualityAssessment assessment;
+            std::string crop_error;
+            const bool truncated = track.box.x1 <= 0.002f ||
+                track.box.y1 <= 0.002f || track.box.x2 >= 0.998f ||
+                track.box.y2 >= 0.998f;
+            if (i420_frame) {
+                session->runtime.queueCrop(
+                    i420_frame,
+                    detections.device_i420_frame,
+                    track.key.track_id,
+                    inference.job.source_sequence,
+                    0.0f,
+                    truncated,
+                    assessment,
+                    crop_error);
+            }
+            else {
+                session->runtime.queueCrop(
+                    frame_view,
+                    track.key.track_id,
+                    inference.job.source_sequence,
+                    0.0f,
+                    truncated,
+                    assessment,
+                    crop_error);
+            }
+        }
+
+        auto crops = session->runtime.takeAttributeBatch(
+            vehicle_assets_->attribute_max_batch);
+        if (!crops.empty()) {
+            std::vector<VehicleAttributeResult> attributes;
+            if (vehicle_attribute_scheduler_) {
+                if (!vehicle_attribute_scheduler_->infer(
+                        std::move(crops), attributes, error)) return false;
+            }
+            else {
+                const auto index = session->attribute_runner_index;
+                if (index >= vehicle_attribute_runners_.size()) {
+                    error = "VEHICLE_ATTRIBUTE_CONTEXT_UNAVAILABLE";
+                    return false;
+                }
+                auto& slot = *vehicle_attribute_runners_[index];
+                try {
+                    std::lock_guard<std::mutex> runner_lock(slot.mutex);
+                    attributes = slot.runner->inferBatch(crops);
+                }
+                catch (const std::exception& exception) {
+                    error = exception.what();
+                    return false;
+                }
+            }
+            if (!session->runtime.onAttributeResults(attributes, error)) {
+                return false;
+            }
+            for (const auto& item : attributes) {
+                session->latest_candidates[item.track_id] = item;
+                bool duplicate = false;
+                std::string observation_error;
+                vehicle_event_publisher_->persistObservation(
+                    item,
+                    inference.job.capture_time_ms,
+                    config_.vehicle_analytics.observation_retention_days,
+                    duplicate,
+                    observation_error);
+            }
+        }
+
+        ++session->frame_count;
+        ++session->infer_window_frames;
+        if (session->infer_window_start_ms <= 0) {
+            session->infer_window_start_ms = inference.job.capture_time_ms;
+        }
+        const auto infer_elapsed = inference.job.capture_time_ms -
+            session->infer_window_start_ms;
+        if (infer_elapsed >= 1000) {
+            session->infer_fps =
+                static_cast<double>(session->infer_window_frames) * 1000.0 /
+                std::max(1LL, infer_elapsed);
+            session->infer_window_frames = 0;
+            session->infer_window_start_ms = inference.job.capture_time_ms;
+        }
+
+        const bool snapshot_due = !session->snapshot_pending &&
+            (!session->has_snapshot ||
+             session->frame_count - session->last_snapshot_frame >=
+                session->snapshot_interval_frames);
+        const cv::Mat* snapshot_image = nullptr;
+        cv::Mat rendered;
+        if (snapshot_due) {
+            const auto& image = inference.job.frame->bgrImage();
+            snapshot_image = &image;
+            rendered = image.clone();
+        }
+        json realtime_items = json::array();
+        int confirmed_count = 0;
+        for (const auto& tracked : tracking.active) {
+            const auto current = session->runtime.trackSnapshot(
+                tracked.key.track_id);
+            const auto& track = current ? *current : tracked;
+            const auto attributes = session->runtime.attributeSnapshot(
+                track.key.track_id);
+            const auto candidate = session->latest_candidates.find(
+                track.key.track_id);
+            if (track.state == VehicleTrackState::Confirmed ||
+                track.state == VehicleTrackState::AttributeCollecting ||
+                track.state == VehicleTrackState::AttributeStable) {
+                ++confirmed_count;
+            }
+            if (snapshot_image) {
+                const auto& image = *snapshot_image;
+                const int left = std::clamp(
+                    static_cast<int>(track.box.x1 * image.cols), 0,
+                    std::max(0, image.cols - 1));
+                const int top = std::clamp(
+                    static_cast<int>(track.box.y1 * image.rows), 0,
+                    std::max(0, image.rows - 1));
+                const int right = std::clamp(
+                    static_cast<int>(track.box.x2 * image.cols), left + 1,
+                    image.cols);
+                const int bottom = std::clamp(
+                    static_cast<int>(track.box.y2 * image.rows), top + 1,
+                    image.rows);
+                const cv::Scalar color(40, 220, 40);
+                cv::rectangle(
+                    rendered, cv::Rect(left, top, right - left, bottom - top),
+                    color, 2, cv::LINE_AA);
+                std::ostringstream label;
+                label << "#" << track.key.track_id << " "
+                      << track.vehicle_class << " " << std::fixed
+                      << std::setprecision(2) << track.detection_confidence;
+                if (attributes && attributes->stable()) {
+                    label << " | " << attributes->body_type.label
+                          << " | " << attributes->color.label;
+                }
+                else if (candidate != session->latest_candidates.end()) {
+                    label << " | " << candidate->second.body_type.label << "?"
+                          << " | " << candidate->second.color.label << "?";
+                }
+                else {
+                    label << " | unknown | unknown";
+                }
+                int baseline = 0;
+                const auto text_size = cv::getTextSize(
+                    label.str(), cv::FONT_HERSHEY_SIMPLEX, 0.52, 1,
+                    &baseline);
+                const int text_top = std::max(
+                    0, top - text_size.height - 8);
+                cv::rectangle(
+                    rendered,
+                    cv::Rect(
+                        left,
+                        text_top,
+                        std::min(text_size.width + 8, image.cols - left),
+                        text_size.height + 8),
+                    cv::Scalar(20, 20, 20),
+                    cv::FILLED);
+                cv::putText(
+                    rendered,
+                    label.str(),
+                    cv::Point(left + 4, text_top + text_size.height + 2),
+                    cv::FONT_HERSHEY_SIMPLEX,
+                    0.52,
+                    color,
+                    1,
+                    cv::LINE_AA);
+            }
+
+            realtime_items.push_back({
+                {"track_id", track.key.track_id},
+                {"run_generation", track.key.run_generation},
+                {"state", std::string(toString(track.state))},
+                {"last_seen_at_ms", track.last_seen_ms},
+                {"vehicle_class", track.vehicle_class},
+                {"vehicle_class_confidence", track.detection_confidence},
+                {"body_type", attributes
+                    ? attributes->body_type.label : "unknown"},
+                {"body_type_confidence", attributes
+                    ? attributes->body_type.confidence : 0.0f},
+                {"body_type_stable", attributes
+                    ? attributes->body_type.stable : false},
+                {"body_type_samples_used", attributes
+                    ? attributes->body_type.samples_used : 0},
+                {"color", attributes
+                    ? attributes->color.label : "unknown"},
+                {"color_confidence", attributes
+                    ? attributes->color.confidence : 0.0f},
+                {"color_stable", attributes
+                    ? attributes->color.stable : false},
+                {"color_samples_used", attributes
+                    ? attributes->color.samples_used : 0},
+                {"attribute_candidate", candidate == session->latest_candidates.end()
+                    ? json(nullptr) : json{
+                        {"body_type", candidate->second.body_type.label},
+                        {"body_type_confidence", candidate->second.body_type.confidence},
+                        {"color", candidate->second.color.label},
+                        {"color_confidence", candidate->second.color.confidence},
+                        {"published_as", "unknown_until_stable"}
+                    }}
+            });
+        }
+
+        if (snapshot_image) {
+            cv::rectangle(
+                rendered, cv::Rect(0, 0, rendered.cols, 34),
+                cv::Scalar(15, 15, 15), cv::FILLED);
+            const std::string panel =
+                "VCAS Vehicle AI | det=" +
+                vehicle_assets_->detector.artifact_id +
+                " attr=" + vehicle_assets_->attributes.artifact_id +
+                " | vehicles=" + std::to_string(confirmed_count);
+            cv::putText(
+                rendered, panel, cv::Point(12, 23),
+                cv::FONT_HERSHEY_SIMPLEX, 0.58,
+                cv::Scalar(0, 220, 255), 2, cv::LINE_AA);
+
+            if (snapshot_writer_) {
+                AnalysisSnapshotJob snapshot_job;
+                snapshot_job.image = std::move(rendered);
+                snapshot_job.output_path = session->snapshot_path;
+                snapshot_job.jpeg_quality = std::clamp(
+                    config_.vehicle_analytics.jpeg_quality, 1, 100);
+                const auto scheduled_frame = session->frame_count;
+                const auto scheduled_run = session->run_id;
+                std::weak_ptr<VehicleSession> weak_session = session;
+                session->snapshot_pending = true;
+                std::string snapshot_error;
+                if (!snapshot_writer_->enqueue(
+                        std::move(snapshot_job),
+                        [weak_session, scheduled_frame, scheduled_run](
+                            const AnalysisSnapshotWriteResult& result) {
+                            const auto current = weak_session.lock();
+                            if (!current) return;
+                            std::lock_guard<std::mutex> lock(current->mutex);
+                            current->snapshot_pending = false;
+                            if (!current->active ||
+                                current->run_id != scheduled_run) {
+                                return;
+                            }
+                            if (result.success) {
+                                current->last_snapshot_frame =
+                                    scheduled_frame;
+                                current->snapshot_degraded = false;
+                                current->has_snapshot = true;
+                            }
+                            else {
+                                current->snapshot_degraded = true;
+                            }
+                        },
+                        snapshot_error)) {
+                    session->snapshot_pending = false;
+                    session->snapshot_degraded = true;
+                }
+            }
+            else {
+                try {
+                    const std::vector<int> parameters{
+                        cv::IMWRITE_JPEG_QUALITY,
+                        std::clamp(config_.vehicle_analytics.jpeg_quality, 1, 100)
+                    };
+                    if (cv::imwrite(
+                            session->snapshot_path.string(), rendered,
+                            parameters)) {
+                        session->last_snapshot_frame = session->frame_count;
+                        session->snapshot_degraded = false;
+                        session->has_snapshot = true;
+                    }
+                    else {
+                        session->snapshot_degraded = true;
+                    }
+                }
+                catch (...) {
+                    session->snapshot_degraded = true;
+                }
+            }
+        }
+
+        const json vehicle_state = {
+            {"success", true},
+            {"mode", "vehicle_cascade"},
+            {"camera_id", inference.job.task_id},
+            {"run_id", inference.job.run_id},
+            {"timestamp_ms", inference.job.capture_time_ms},
+            {"detector_artifact", vehicle_assets_->detector.artifact_id},
+            {"attribute_artifact", vehicle_assets_->attributes.artifact_id},
+            {"labels_version", vehicle_assets_->labels_version},
+            {"detection_count", detections.detections.size()},
+            {"confirmed_count", confirmed_count},
+            {"items", std::move(realtime_items)}
+        };
+        analysis_result.run_id = inference.job.run_id;
+        analysis_result.task_id = inference.job.task_id;
+        analysis_result.analysis_state_json = vehicle_state.dump();
+        analysis_result.snapshot_relative_path =
+            session->has_snapshot
+                ? session->snapshot_relative_path : std::string{};
+        analysis_result.storage_degraded = session->storage_degraded;
+        analysis_result.snapshot_degraded = session->snapshot_degraded;
+        analysis_result.last_update_ms = inference.job.capture_time_ms;
+
+        hot.found = true;
+        hot.run_id = inference.job.run_id;
+        hot.task_id = inference.job.task_id;
+        hot.analysis_config_version = session->config_version;
+        hot.infer_fps = session->infer_fps;
+        hot.last_inference_ms = inference.inference_ms;
+        hot.analysis_frame_count = session->frame_count;
+        hot.analysis_state_json = analysis_result.analysis_state_json;
+        hot.analysis_snapshot_relative_path =
+            analysis_result.snapshot_relative_path;
+        hot.analysis_storage_degraded = session->storage_degraded;
+        hot.analysis_snapshot_degraded = session->snapshot_degraded;
+        hot.analysis_last_update_ms = inference.job.capture_time_ms;
+        persist_analysis = session->last_persist_ms <= 0 ||
+            inference.job.capture_time_ms - session->last_persist_ms >= 1000 ||
+            !exited_tracks.empty();
+        session->latest_result = analysis_result;
+        session->latest_hot = hot;
     }
-    auto session = std::make_shared<Session>(config_, job);
-    sessions_[job.task_id] = session;
-    return session;
+
+    for (const auto& track : exited_tracks) {
+        const auto attributes = session->runtime.finalizeTrack(
+            track.key.track_id);
+        VehicleEventPublishContext context;
+        context.task_id = inference.job.task_id;
+        context.camera_profile = inference.job.camera_profile;
+        context.callback_profile = inference.job.callback_profile;
+        context.detector_artifact = vehicle_assets_->detector.artifact_id;
+        context.attribute_artifact = vehicle_assets_->attributes.artifact_id;
+        context.labels_version = vehicle_assets_->labels_version;
+        context.config_version = vehicle_assets_->config_version;
+        context.snapshot_relative_path = session->snapshot_relative_path;
+        context.published_at_ms = wallNowMs();
+        VehicleTrackResultRecord persisted;
+        bool duplicate = false;
+        std::string publish_error;
+        if (!vehicle_event_publisher_->publish(
+                track, attributes, context, persisted, duplicate,
+                publish_error) && !duplicate) {
+            error = publish_error;
+            return false;
+        }
+    }
+
+    if (persist_analysis) {
+        std::string repository_error;
+        const bool saved = repository_->upsertRunAnalysisResult(
+            analysis_result, repository_error);
+        std::lock_guard<std::mutex> lock(session->mutex);
+        session->storage_degraded = !saved;
+        if (saved) session->last_persist_ms = analysis_result.last_update_ms;
+        hot.analysis_storage_degraded = !saved;
+    }
+    if (status_sink_) {
+        std::string status_error;
+        status_sink_->updateAnalysisStatus(hot, status_error);
+    }
+    ++processed_frames_;
+    return true;
 }
 
 bool CameraAlgorithmProcessor::handle(
@@ -439,231 +706,13 @@ bool CameraAlgorithmProcessor::handle(
         error = "ALGORITHM_PROCESSOR_NOT_RUNNING";
         return false;
     }
-    auto session = sessionFor(inference.job, error);
-    if (!session) {
+    if (!inference.output.has_vehicle_detection) {
+        error = "UNSUPPORTED_NON_VEHICLE_OUTPUT";
         ++failed_frames_;
         return false;
     }
-
-    std::vector<SecurityAlertEventRecord> alerts;
-    CameraRunAnalysisResultRecord analysis_result;
-    CameraTaskRunHotStatus hot;
-    bool persist_analysis = false;
-    {
-        std::lock_guard<std::mutex> lock(session->mutex);
-        if (!session->active || session->run_id != inference.job.run_id) {
-            error = "STALE_ANALYSIS_SESSION";
-            ++failed_frames_;
-            return false;
-        }
-        if (inference.job.reconnect_count != session->reconnect_count) {
-            session->tracker.reset();
-            session->counter.resetTrackState();
-            session->renderer.resetEventMarkers();
-            if (session->security) session->security->reset();
-            if (session->security_renderer) session->security_renderer->reset();
-            session->security_frame = {};
-            session->warmup_remaining =
-                config_.people_flow.warmup_frames_after_reconnect;
-            session->reconnect_count = inference.job.reconnect_count;
-        }
-        const cv::Size frame_size = inference.job.frame->image.size();
-        const auto detections = session->adapter.filter(
-            inference.output, frame_size, inference.job.capture_time_ms);
-        session->tracker.update(
-            detections,
-            frame_size.width,
-            frame_size.height,
-            inference.job.capture_time_ms);
-        const auto tracks = session->tracker.confirmedTracks();
-
-        bool warmup_active = false;
-        if (contains(session->algorithms, "people_flow")) {
-            if (session->warmup_remaining > 0) {
-                warmup_active = true;
-                --session->warmup_remaining;
-            }
-            else {
-                const auto events = session->counter.update(
-                    tracks,
-                    frame_size.width,
-                    frame_size.height,
-                    inference.job.capture_time_ms);
-                for (const auto& event : events) {
-                    alerts.push_back(lineAlert(config_, inference, event));
-                }
-            }
-        }
-        if (session->security) {
-            session->security_frame = session->security->update(
-                tracks,
-                inference.output,
-                frame_size,
-                inference.job.capture_time_ms);
-            for (const auto& event : session->security_frame.new_events) {
-                if (wantsSecurityCategory(session->algorithms, event.category)) {
-                    alerts.push_back(securityAlert(config_, inference, event));
-                }
-            }
-        }
-
-        ++session->frame_count;
-        ++session->infer_window_frames;
-        if (session->infer_window_start_ms <= 0) {
-            session->infer_window_start_ms = inference.job.capture_time_ms;
-        }
-        const long long infer_elapsed =
-            inference.job.capture_time_ms - session->infer_window_start_ms;
-        if (infer_elapsed >= 1000) {
-            session->infer_fps =
-                static_cast<double>(session->infer_window_frames) * 1000.0 /
-                std::max(1LL, infer_elapsed);
-            session->infer_window_start_ms = inference.job.capture_time_ms;
-            session->infer_window_frames = 0;
-        }
-        session->last_inference_ms = inference.inference_ms;
-
-        const PeopleFlowCounts counts = session->counter.counts();
-        const bool snapshot_due = session->frame_count == 1 ||
-            session->frame_count - session->last_snapshot_frame >=
-                session->snapshot_interval_frames ||
-            !alerts.empty();
-        if (snapshot_due) {
-            PeopleFlowRenderMetrics metrics;
-            metrics.capture_fps = inference.job.capture_fps;
-            metrics.infer_fps = session->infer_fps;
-            metrics.latest_frame_age_ms = inference.job.latest_frame_age_ms;
-            metrics.reconnect_count = session->reconnect_count;
-            metrics.capture_state = "running";
-            cv::Mat rendered = session->renderer.render(
-                inference.job.frame->image, tracks, counts, metrics, nullptr);
-            if (session->security_renderer) {
-                rendered = session->security_renderer->render(
-                    rendered.empty() ? inference.job.frame->image : rendered,
-                    session->security_frame);
-            }
-            const cv::Mat& output =
-                rendered.empty() ? inference.job.frame->image : rendered;
-            const std::vector<int> parameters{
-                cv::IMWRITE_JPEG_QUALITY,
-                std::clamp(config_.people_flow.jpeg_quality, 1, 100)
-            };
-            try {
-                if (cv::imwrite(
-                        session->snapshot_path.string(), output, parameters)) {
-                    session->last_snapshot_frame = session->frame_count;
-                    session->snapshot_degraded = false;
-                }
-                else {
-                    session->snapshot_degraded = true;
-                }
-            }
-            catch (...) {
-                session->snapshot_degraded = true;
-            }
-        }
-
-        const json security_state = session->security
-            ? securityFrameJson(
-                session->security_frame,
-                config_.people_flow.security,
-                inference.job.run_id,
-                inference.job.task_id)
-            : inactiveSecurityState(
-                inference.job.capture_time_ms,
-                inference.job.run_id,
-                inference.job.task_id);
-
-        analysis_result.run_id = inference.job.run_id;
-        analysis_result.task_id = inference.job.task_id;
-        analysis_result.initial_occupancy = session->initial_occupancy;
-        analysis_result.in_count = counts.in_count;
-        analysis_result.out_count = counts.out_count;
-        analysis_result.final_occupancy = counts.occupancy;
-        analysis_result.last_live_persons = counts.live_persons;
-        analysis_result.security_state_json = security_state.dump();
-        analysis_result.snapshot_relative_path =
-            session->last_snapshot_frame > 0
-                ? session->snapshot_relative_path
-                : std::string{};
-        analysis_result.storage_degraded = session->storage_degraded;
-        analysis_result.snapshot_degraded = session->snapshot_degraded;
-        analysis_result.last_update_ms = inference.job.capture_time_ms;
-
-        hot.found = true;
-        hot.run_id = inference.job.run_id;
-        hot.task_id = inference.job.task_id;
-        hot.analysis_config_version = session->config_version;
-        hot.infer_fps = session->infer_fps;
-        hot.last_inference_ms = session->last_inference_ms;
-        hot.analysis_frame_count = session->frame_count;
-        hot.initial_occupancy = session->initial_occupancy;
-        hot.in_count = counts.in_count;
-        hot.out_count = counts.out_count;
-        hot.occupancy = counts.occupancy;
-        hot.live_persons = counts.live_persons;
-        hot.analysis_reconnect_count = session->reconnect_count;
-        hot.warmup_frames_remaining = session->warmup_remaining;
-        hot.security_state_json = analysis_result.security_state_json;
-        hot.analysis_snapshot_relative_path =
-            analysis_result.snapshot_relative_path;
-        hot.analysis_storage_degraded = session->storage_degraded;
-        hot.analysis_snapshot_degraded = session->snapshot_degraded;
-        hot.analysis_last_update_ms = inference.job.capture_time_ms;
-
-        persist_analysis = session->last_persist_ms <= 0 ||
-            inference.job.capture_time_ms - session->last_persist_ms >= 1000 ||
-            !alerts.empty();
-        session->latest_result = analysis_result;
-        session->latest_hot = hot;
-        session->has_snapshot = true;
-        (void)warmup_active;
-    }
-
-    for (const auto& alert : alerts) {
-        std::string code;
-        std::string repository_error;
-        if (repository_->insertAlert(
-                alert,
-                inference.job.callback_profile,
-                code,
-                repository_error)) {
-            ++persisted_alerts_;
-            continue;
-        }
-        if (code == "ALERT_ALREADY_EXISTS") {
-            ++duplicate_alerts_;
-            continue;
-        }
-        error = code.empty() ? repository_error : code + ":" + repository_error;
-        ++failed_frames_;
-        return false;
-    }
-    if (persist_analysis) {
-        std::string repository_error;
-        if (repository_->upsertRunAnalysisResult(
-                analysis_result, repository_error)) {
-            std::lock_guard<std::mutex> lock(session->mutex);
-            session->last_persist_ms = analysis_result.last_update_ms;
-            session->storage_degraded = false;
-            session->latest_result.storage_degraded = false;
-            session->latest_hot.analysis_storage_degraded = false;
-            hot.analysis_storage_degraded = false;
-        }
-        else {
-            std::lock_guard<std::mutex> lock(session->mutex);
-            session->storage_degraded = true;
-            session->latest_result.storage_degraded = true;
-            session->latest_hot.analysis_storage_degraded = true;
-            hot.analysis_storage_degraded = true;
-        }
-    }
-    if (status_sink_) {
-        std::string status_error;
-        status_sink_->updateAnalysisStatus(hot, status_error);
-    }
-    ++processed_frames_;
-    return true;
+    if (!handleVehicle(inference, error)) ++failed_frames_;
+    return error.empty();
 }
 
 void CameraAlgorithmProcessor::detachCamera(
@@ -671,39 +720,71 @@ void CameraAlgorithmProcessor::detachCamera(
     const std::string& run_id
 ) noexcept {
     try {
-        std::shared_ptr<Session> session;
-        CameraRunAnalysisResultRecord final_result;
-        CameraTaskRunHotStatus final_hot;
-        bool finalize = false;
+        std::shared_ptr<VehicleSession> vehicle_session;
         {
-            std::lock_guard<std::mutex> lock(sessions_mutex_);
-            const auto found = sessions_.find(task_id);
-            if (found == sessions_.end() || found->second->run_id != run_id) return;
-            session = found->second;
-            sessions_.erase(found);
+            std::lock_guard<std::mutex> vehicle_lock(vehicle_sessions_mutex_);
+            const auto found = vehicle_sessions_.find(task_id);
+            if (found != vehicle_sessions_.end() &&
+                found->second->run_id == run_id) {
+                vehicle_session = found->second;
+                const auto index = vehicle_session->attribute_runner_index;
+                if (index < vehicle_attribute_runners_.size() &&
+                    vehicle_attribute_runners_[index]->active_sessions > 0) {
+                    --vehicle_attribute_runners_[index]->active_sessions;
+                }
+                vehicle_sessions_.erase(found);
+            }
         }
-        {
-            std::lock_guard<std::mutex> lock(session->mutex);
-            session->active = false;
-            if (session->has_snapshot) {
-                final_result = session->latest_result;
+        if (vehicle_session) {
+            CameraRunAnalysisResultRecord final_result;
+            CameraTaskRunHotStatus final_hot;
+            std::vector<VehicleTrackSnapshot> exited;
+            {
+                std::lock_guard<std::mutex> lock(vehicle_session->mutex);
+                vehicle_session->active = false;
+                exited = vehicle_session->runtime.stop(wallNowMs());
+                final_result = vehicle_session->latest_result;
                 final_result.finalized_at_ms = wallNowMs();
-                final_result.last_update_ms =
-                    std::max(final_result.last_update_ms,
-                        final_result.finalized_at_ms);
-                final_hot = session->latest_hot;
-                final_hot.analysis_last_update_ms =
-                    final_result.last_update_ms;
-                finalize = true;
+                final_result.last_update_ms = std::max(
+                    final_result.last_update_ms, final_result.finalized_at_ms);
+                final_hot = vehicle_session->latest_hot;
+                final_hot.analysis_last_update_ms = final_result.last_update_ms;
             }
-        }
-        if (finalize) {
+            if (vehicle_event_publisher_ && vehicle_assets_) {
+                for (const auto& track : exited) {
+                    const auto attributes =
+                        vehicle_session->runtime.finalizeTrack(track.key.track_id);
+                    VehicleEventPublishContext context;
+                    context.task_id = task_id;
+                    context.camera_profile = vehicle_session->camera_profile;
+                    context.callback_profile = vehicle_session->callback_profile;
+                    context.detector_artifact =
+                        vehicle_assets_->detector.artifact_id;
+                    context.attribute_artifact =
+                        vehicle_assets_->attributes.artifact_id;
+                    context.labels_version = vehicle_assets_->labels_version;
+                    context.config_version = vehicle_assets_->config_version;
+                    context.snapshot_relative_path =
+                        vehicle_session->snapshot_relative_path;
+                    context.finalized_reason = "camera_stop";
+                    context.published_at_ms = wallNowMs();
+                    VehicleTrackResultRecord persisted;
+                    bool duplicate = false;
+                    std::string ignored;
+                    vehicle_event_publisher_->publish(
+                        track, attributes, context, persisted, duplicate, ignored);
+                }
+            }
             std::string ignored;
-            repository_->upsertRunAnalysisResult(final_result, ignored);
-            if (status_sink_) {
-                status_sink_->updateAnalysisStatus(final_hot, ignored);
+            if (vehicle_session->has_snapshot) {
+                repository_->upsertRunAnalysisResult(final_result, ignored);
+                if (status_sink_) {
+                    status_sink_->updateAnalysisStatus(final_hot, ignored);
+                }
             }
+            return;
         }
+
     }
     catch (...) {
     }
@@ -712,13 +793,19 @@ void CameraAlgorithmProcessor::detachCamera(
 CameraAlgorithmProcessorSnapshot CameraAlgorithmProcessor::snapshot() const {
     CameraAlgorithmProcessorSnapshot result;
     {
-        std::lock_guard<std::mutex> lock(sessions_mutex_);
-        result.active_sessions = sessions_.size();
+        std::lock_guard<std::mutex> lock(vehicle_sessions_mutex_);
+        result.active_sessions = vehicle_sessions_.size();
     }
     result.processed_frames = processed_frames_.load();
     result.persisted_alerts = persisted_alerts_.load();
     result.duplicate_alerts = duplicate_alerts_.load();
     result.failed_frames = failed_frames_.load();
+    if (vehicle_attribute_scheduler_) {
+        result.attribute_scheduler = vehicle_attribute_scheduler_->snapshot();
+    }
+    if (snapshot_writer_) {
+        result.snapshot_writer = snapshot_writer_->metrics();
+    }
     return result;
 }
 

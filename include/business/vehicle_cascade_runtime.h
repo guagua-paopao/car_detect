@@ -122,6 +122,11 @@ public:
         const VehicleBox& box,
         float occlusion_fraction,
         bool truncated) const;
+    CropQualityAssessment assess(
+        const I420ImageView& frame,
+        const VehicleBox& box,
+        float occlusion_fraction,
+        bool truncated) const;
     std::shared_ptr<const OwnedImage> copyCrop(
         const ImageView& frame,
         const VehicleBox& box,
@@ -165,6 +170,10 @@ struct TrackAttributeAggregatorConfig {
     std::size_t max_observations = 5;
     float body_type_threshold = 0.75f;
     float color_threshold = 0.70f;
+    std::size_t switch_confirmations = 3;
+    std::size_t conflict_unknown_after = 2;
+    float reverse_quality_ratio = 0.75f;
+    float switch_override_ratio = 1.15f;
 };
 
 struct FusedAttribute {
@@ -192,6 +201,8 @@ struct TrackAttributeAggregatorMetrics {
     std::uint64_t stale_rejected = 0;
     std::uint64_t version_rejected = 0;
     std::uint64_t finalized = 0;
+    std::uint64_t tracks_stabilized = 0;
+    std::uint64_t label_switches = 0;
 };
 
 class VehicleTrackAttributeAggregator {
@@ -213,7 +224,22 @@ private:
         std::string labels_version;
         std::uint64_t last_crop_sequence = 0;
         std::vector<VehicleAttributeResult> items;
+        std::string stable_body_label = "unknown";
+        std::string stable_color_label = "unknown";
+        float stable_body_confidence = 0.0f;
+        float stable_color_confidence = 0.0f;
+        std::string pending_body_label = "unknown";
+        std::string pending_color_label = "unknown";
+        std::size_t body_reverse_evidence = 0;
+        std::size_t color_reverse_evidence = 0;
+        std::size_t body_conflict_evidence = 0;
+        std::size_t color_conflict_evidence = 0;
+        bool counted_stable = false;
     };
+
+    void updateStableState(
+        TrackObservations& track,
+        const VehicleAttributeResult& latest);
 
     TrackAttributeAggregatorConfig config_;
     std::map<VehicleTrackKey, TrackObservations> observations_;
@@ -241,6 +267,23 @@ public:
         std::string& error);
     bool queueCrop(
         const ImageView& frame,
+        std::int64_t track_id,
+        std::uint64_t crop_sequence,
+        float occlusion_fraction,
+        bool truncated,
+        CropQualityAssessment& assessment,
+        std::string& error);
+    bool queueCrop(
+        std::shared_ptr<const OwnedI420Image> frame,
+        std::int64_t track_id,
+        std::uint64_t crop_sequence,
+        float occlusion_fraction,
+        bool truncated,
+        CropQualityAssessment& assessment,
+        std::string& error);
+    bool queueCrop(
+        std::shared_ptr<const OwnedI420Image> frame,
+        std::shared_ptr<const DeviceI420Image> device_frame,
         std::int64_t track_id,
         std::uint64_t crop_sequence,
         float occlusion_fraction,

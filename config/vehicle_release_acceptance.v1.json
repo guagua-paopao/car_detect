@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "policy_id": "vehicle-learning-release-v1",
+  "release_scope": "non_commercial_learning",
+  "performance": {
+    "camera_count": 2,
+    "width": 1920,
+    "height": 1080,
+    "minimum_duration_minutes": 30,
+    "minimum_detection_fps_per_camera": 8.0,
+    "queue_growth_allowed": false
+  },
+  "latency": {
+    "attribute_stable_p95_ms_max": 1500,
+    "event_persist_p95_ms_max": 2000
+  },
+  "stability": {
+    "minimum_duration_hours": 8,
+    "maximum_crashes": 0,
+    "gpu_memory_growth_allowed": false,
+    "unbounded_reconnect_allowed": false,
+    "stale_run_results_allowed": false
+  },
+  "idempotency": {
+    "maximum_duplicate_final_events": 0
+  },
+  "required_fault_drills": [
+    "rtsp_disconnect",
+    "postgresql_unavailable",
+    "redis_restart",
+    "callback_5xx",
+    "worker_restart"
+  ],
+  "required_rollback_checks": [
+    "database_backup_restore",
+    "previous_binary_retained",
+    "previous_config_retained",
+    "previous_engine_retained",
+    "rollback_drill"
+  ]
+}

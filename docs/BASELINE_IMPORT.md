@@ -19,7 +19,7 @@
 - Camera CRUD、RunSpec、任务租约和代际抑制
 - PostgreSQL Repository 与迁移框架
 - Callback Outbox、重试、dead-letter 和 HMAC
-- Web/Qt 控制面、可观测性和运维脚本
+- Web 控制面、可观测性和运维脚本
 - 现有契约、单元和集成测试
 
 ## 导入时移除
@@ -32,11 +32,11 @@
 
 本地的 `out/`、`runtime/`、`reports/` 和 `vcpkg_installed/` 属于忽略的构建或运行资产，不进入 Git 历史，也不在导入过程中主动删除。
 
-## 暂时保留的兼容代码
+## 兼容代码清理结果
 
-人物、Pose、People Flow 相关源码仍被现有 CMake 目标、启动脚本和测试依赖。为保证导入基线可验证，本次不进行破坏式删除。
+基线导入时曾暂时保留人物、姿态估计和人流统计源码，以便验证车辆替代链路。车辆链路达到测试覆盖后，相关构建目标、API、配置、数据库对象、脚本和测试均已删除。
 
-后续必须遵守以下顺序：
+清理过程遵守了以下顺序：
 
 1. 新增独立车辆类型和接口。
 2. 新增 Vehicle Detection Runner 和 Vehicle Attribute Runner。
@@ -44,4 +44,4 @@
 4. 新增车辆数据库、API 和测试。
 5. 车辆链路达到基线测试覆盖后，删除被替代的人物专用目标和资产。
 
-禁止直接把车辆逻辑堆叠到 `CameraAlgorithmProcessor` 的人物分支中。
+车辆逻辑保持为独立实现，不与已删除的人物处理分支混用。

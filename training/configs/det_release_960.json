@@ -1,0 +1,13 @@
+{
+  "experiment_id": "DET-RELEASE-960",
+  "model": "yolo11s.pt",
+  "imgsz": 960,
+  "epochs": 150,
+  "patience": 30,
+  "batch": -1,
+  "workers": 8,
+  "amp": true,
+  "seed": 20260728,
+  "deterministic": true,
+  "save_period": 5
+}

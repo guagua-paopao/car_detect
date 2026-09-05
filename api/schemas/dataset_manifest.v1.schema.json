@@ -191,6 +191,26 @@
                 "truncated": {"type": "boolean"}
               }
             },
+            "detections": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["bbox_xyxy_norm", "vehicle_class", "occluded", "truncated"],
+                "properties": {
+                  "bbox_xyxy_norm": {
+                    "type": "array",
+                    "minItems": 4,
+                    "maxItems": 4,
+                    "items": {"type": "number", "minimum": 0, "maximum": 1}
+                  },
+                  "vehicle_class": {"type": "string"},
+                  "occluded": {"type": "boolean"},
+                  "truncated": {"type": "boolean"}
+                }
+              }
+            },
             "attributes": {
               "type": "object",
               "additionalProperties": false,

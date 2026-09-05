@@ -190,6 +190,66 @@ bool ImageView::valid() const noexcept {
     return row_stride_bytes >= minimum_stride;
 }
 
+bool I420ImageView::valid() const noexcept {
+    return y_plane != nullptr && u_plane != nullptr && v_plane != nullptr &&
+        width > 0 && height > 0 && (width & 1) == 0 && (height & 1) == 0 &&
+        y_stride_bytes >= static_cast<std::size_t>(width) &&
+        u_stride_bytes >= static_cast<std::size_t>(width / 2) &&
+        v_stride_bytes >= static_cast<std::size_t>(width / 2);
+}
+
+bool OwnedI420Image::valid() const noexcept {
+    if (!bytes || width <= 0 || height <= 0 ||
+        (width & 1) != 0 || (height & 1) != 0 ||
+        y_stride_bytes < static_cast<std::size_t>(width) ||
+        u_stride_bytes < static_cast<std::size_t>(width / 2) ||
+        v_stride_bytes < static_cast<std::size_t>(width / 2)) {
+        return false;
+    }
+    const auto plane_fits = [this](
+        std::size_t offset,
+        std::size_t stride,
+        int rows,
+        std::size_t row_bytes) {
+        if (rows <= 0 || offset > bytes->size()) return false;
+        const auto tail = static_cast<std::size_t>(rows - 1) * stride;
+        return tail <= bytes->size() - offset &&
+            row_bytes <= bytes->size() - offset - tail;
+    };
+    return plane_fits(
+               y_offset, y_stride_bytes, height,
+               static_cast<std::size_t>(width)) &&
+        plane_fits(
+               u_offset, u_stride_bytes, height / 2,
+               static_cast<std::size_t>(width / 2)) &&
+        plane_fits(
+               v_offset, v_stride_bytes, height / 2,
+               static_cast<std::size_t>(width / 2));
+}
+
+I420ImageView OwnedI420Image::view() const noexcept {
+    if (!valid()) return {};
+    const auto* data = bytes->data();
+    return {
+        data + y_offset,
+        data + u_offset,
+        data + v_offset,
+        width,
+        height,
+        y_stride_bytes,
+        u_stride_bytes,
+        v_stride_bytes,
+    };
+}
+
+bool DeviceI420Image::valid() const noexcept {
+    return lease && y_plane && u_plane && v_plane &&
+        width > 0 && height > 0 && (width & 1) == 0 && (height & 1) == 0 &&
+        y_stride_bytes >= static_cast<std::size_t>(width) &&
+        u_stride_bytes >= static_cast<std::size_t>(width / 2) &&
+        v_stride_bytes >= static_cast<std::size_t>(width / 2);
+}
+
 bool OwnedImage::valid() const noexcept {
     if (width <= 0 || height <= 0 || channels <= 0) return false;
     const auto minimum_stride =

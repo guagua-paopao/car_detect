@@ -16,12 +16,12 @@ void require(bool condition, const std::string& message) {
     }
 }
 
-WorkerHeartbeatRecord unifiedWorker() {
+WorkerHeartbeatRecord vehicleWorker() {
     WorkerHeartbeatRecord worker;
     worker.alive = true;
     worker.worker_kind = "vision_host";
     worker.task_kind = "camera_pipeline";
-    worker.runtime_mode = "unified_camera_pipeline";
+    worker.runtime_mode = "vehicle_camera_pipeline";
     worker.worker_generation = "200:1234";
     worker.camera_task_manager_running = true;
     worker.hub_registry_ready = true;
@@ -35,41 +35,38 @@ WorkerHeartbeatRecord unifiedWorker() {
 
 int main() {
     const auto healthy = evaluateWorkerRuntimeReadiness(
-        { unifiedWorker() }, true, true);
+        { vehicleWorker() }, true);
     require(healthy.camera_role_alive &&
             healthy.single_vision_worker &&
             healthy.mode_consistent &&
-            !healthy.legacy_people_flow_worker_detected &&
             healthy.coordination_healthy &&
             healthy.camera_task_manager_running &&
             healthy.hub_registry_ready &&
             healthy.algorithm_runtime.host_running,
-        "one fenced Camera-only Worker must satisfy unified readiness");
+        "one fenced vehicle Camera Worker must satisfy readiness");
 
-    auto legacy = unifiedWorker();
-    legacy.task_kind = "live_people_flow,camera_frame";
-    legacy.runtime_mode = "legacy_split";
-    legacy.legacy_people_flow_role = true;
+    auto incompatible = vehicleWorker();
+    incompatible.task_kind = "camera_frame";
+    incompatible.runtime_mode = "unknown";
     const auto mismatch = evaluateWorkerRuntimeReadiness(
-        { legacy }, true, true);
+        { incompatible }, true);
     require(!mismatch.camera_role_alive &&
             mismatch.single_vision_worker &&
-            !mismatch.mode_consistent &&
-            mismatch.legacy_people_flow_worker_detected,
-        "unified /ready must reject an old People Flow Worker");
+            !mismatch.mode_consistent,
+        "/ready must reject an incompatible Worker");
 
-    auto duplicate = unifiedWorker();
+    auto duplicate = vehicleWorker();
     duplicate.worker_generation = "201:1236";
     const auto double_consumer = evaluateWorkerRuntimeReadiness(
-        { unifiedWorker(), duplicate }, true, true);
+        { vehicleWorker(), duplicate }, true);
     require(double_consumer.camera_role_alive &&
             !double_consumer.single_vision_worker,
         "/ready must reject two live Vision Worker generations");
 
-    auto unfenced = unifiedWorker();
+    auto unfenced = vehicleWorker();
     unfenced.coordination_healthy = false;
     const auto lease_lost = evaluateWorkerRuntimeReadiness(
-        { unfenced }, true, true);
+        { unfenced }, true);
     require(!lease_lost.coordination_healthy,
         "/ready must reject a Worker that lost process ownership");
 

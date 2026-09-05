@@ -192,7 +192,7 @@ int main() {
     hub.snapshot.backend_name = "FFMPEG";
     hub.snapshot.open_count = 1;
     hub.snapshot.subscriber_count = 2;
-    hub.snapshot.subscriber_types = { {"people_flow", 1}, {"camera_task", 1} };
+    hub.snapshot.subscriber_types = { {"camera_pipeline", 1}, {"camera_task", 1} };
     hub.snapshot.capture_fps = 25.0;
     hub.snapshot.latest_sequence = 55;
     hub.snapshot.last_error = "rtsp://user:password@example.invalid/secret";
@@ -207,9 +207,22 @@ int main() {
     algorithm_runtime.inference_workers_configured = 2;
     algorithm_runtime.inference_workers_ready = 2;
     algorithm_runtime.inference_processed_jobs = 42;
+    algorithm_runtime.inference_pending_result_jobs = 1;
+    algorithm_runtime.inference_maximum_pending_result_jobs = 2;
+    algorithm_runtime.inference_handled_result_jobs = 41;
     algorithm_runtime.processor_running = true;
     algorithm_runtime.processor_processed_frames = 42;
     algorithm_runtime.processor_persisted_alerts = 2;
+    algorithm_runtime.attribute_scheduler_running = true;
+    algorithm_runtime.attribute_scheduler_requests = 9;
+    algorithm_runtime.attribute_scheduler_completed_requests = 8;
+    algorithm_runtime.attribute_scheduler_batches = 4;
+    algorithm_runtime.attribute_scheduler_crops = 23;
+    algorithm_runtime.attribute_scheduler_pending_requests = 1;
+    algorithm_runtime.attribute_scheduler_pending_crops = 2;
+    algorithm_runtime.attribute_scheduler_mean_queue_wait_ms = 1.25;
+    algorithm_runtime.attribute_scheduler_p95_queue_wait_ms = 2.0;
+    algorithm_runtime.attribute_scheduler_p99_queue_wait_ms = 2.5;
     algorithm_runtime.callbacks_configured = true;
     algorithm_runtime.callback_running = true;
     algorithm_runtime.callback_profiles_ready = 1;
@@ -297,7 +310,7 @@ int main() {
 
     const std::string camera_id = "entrance_extract_01";
     const std::string create_payload =
-        R"({"camera_id":"entrance_extract_01","name":"Entrance extraction","camera_profile":"entry_camera_01","desired_state":"running","frame_interval_ms":1000,"output_mode":"both","jpeg_quality":88,"max_width":640,"max_height":480,"retention_days":7,"max_saved_frames":10,"analysis":{"enabled":true,"target_infer_fps":6.5,"algorithm_profile":"security_default","algorithms":["people_flow","electronic_fence"]},"callback_profile":"backend_primary"})";
+        R"({"camera_id":"entrance_extract_01","name":"Entrance extraction","camera_profile":"entry_camera_01","desired_state":"running","frame_interval_ms":1000,"output_mode":"both","jpeg_quality":88,"max_width":640,"max_height":480,"retention_days":7,"max_saved_frames":10,"analysis":{"enabled":true,"target_infer_fps":6.5,"algorithm_profile":"vehicle_default","algorithms":["vehicle_detection","vehicle_attribute"]},"callback_profile":"backend_primary"})";
     auto create_request = request(create_payload);
     create_request.add_header("Idempotency-Key", "create-entrance-001");
     response = controller.createTask(create_request);
@@ -310,17 +323,16 @@ int main() {
             control->submitted.front().camera_profile == enabled.id &&
             control->submitted.front().analysis_enabled &&
             control->submitted.front().target_infer_fps == 6.5 &&
-            control->submitted.front().algorithm_profile == "security_default" &&
+            control->submitted.front().algorithm_profile == "vehicle_default" &&
             control->submitted.front().algorithms ==
-                std::vector<std::string>({ "people_flow", "electronic_fence" }) &&
+                std::vector<std::string>({
+                    "vehicle_detection", "vehicle_attribute" }) &&
             control->submitted.front().callback_profile == "backend_primary" &&
             control->submitted.front().origin == "camera_api" &&
             control->submitted.front().analysis_config_version ==
-                config.people_flow.config_version &&
-            control->submitted.front().initial_occupancy ==
-                config.people_flow.initial_occupancy &&
+                "vehicle_default" &&
             control->submitted.front().snapshot_fps ==
-                config.people_flow.snapshot_fps,
+                config.vehicle_analytics.snapshot_fps,
         "the extraction command must carry the safe immutable RunSpec and contain no RTSP URI");
     response = controller.createTask(create_request);
     require(response.code == 202 &&
@@ -418,19 +430,14 @@ int main() {
     hot.skipped_frames = 4;
     hot.last_source_sequence = 55;
     hot.last_frame_time_ms = nowMs();
-    hot.analysis_config_version = "entry-line-v3";
+    hot.analysis_config_version = "vehicle-v1";
     hot.infer_fps = 6.5;
     hot.last_inference_ms = 12.25;
     hot.analysis_frame_count = 7;
-    hot.initial_occupancy = 4;
-    hot.in_count = 3;
-    hot.out_count = 1;
-    hot.occupancy = 6;
-    hot.live_persons = 2;
     hot.analysis_snapshot_relative_path =
         camera_id + "/" + replacement_run_id + "/analysis/latest.jpg";
-    hot.security_state_json =
-        R"({"stages":{"phase1":{"ready":true},"phase2":{"ready":true},"phase3":{"ready":true},"phase4":{"ready":true}}})";
+    hot.analysis_state_json =
+        R"({"mode":"vehicle_cascade","confirmed_count":2})";
     hot.analysis_last_update_ms = nowMs();
     control->run_status[replacement_run_id] = hot;
     response = controller.taskStatus(request(), camera_id);
@@ -439,13 +446,11 @@ int main() {
             responseBody(response)["desired_state"] == "running" &&
             responseBody(response)["analysis"]["enabled"] == true &&
             responseBody(response)["analysis"]["runtime_stale"] == false &&
-            responseBody(response)["analysis"]["config_version"] == "entry-line-v3" &&
-            responseBody(response)["analysis"]["in_count"] == 3 &&
-            responseBody(response)["analysis"]["occupancy"] == 6 &&
+            responseBody(response)["analysis"]["config_version"] == "vehicle-v1" &&
             responseBody(response)["analysis"]["snapshot_url"] ==
                 "/api/v1/cameras/" + camera_id +
                     "/analysis-snapshot" &&
-            responseBody(response)["analysis"]["security"]["stages"]["phase4"]["ready"] == true &&
+            responseBody(response)["analysis"]["results"]["confirmed_count"] == 2 &&
             responseBody(response)["pipeline"]["thread_running"] == true &&
             responseBody(response)["pipeline"]["sampled_frames"] == 8 &&
             responseBody(response)["hub"]["open_count"] == 1,
@@ -700,6 +705,9 @@ int main() {
             responseBody(response)["callback_outbox"]["retry"] == 1 &&
             responseBody(response)["algorithm_runtime"]["available"] == true &&
             responseBody(response)["algorithm_runtime"]["inference"]["workers_ready"] == 2 &&
+            responseBody(response)["algorithm_runtime"]["inference"]["pending_result_jobs"] == 1 &&
+            responseBody(response)["algorithm_runtime"]["attribute_scheduler"]["batches"] == 4 &&
+            responseBody(response)["algorithm_runtime"]["attribute_scheduler"]["p95_queue_wait_ms"] == 2.0 &&
             responseBody(response)["algorithm_runtime"]["callbacks"]["delivered"] == 7 &&
             responseBody(response)["invariants"]["subscriber_count_matches_types"] == true,
         "operations metrics must merge durable, Hub, inference, processor, and callback state");

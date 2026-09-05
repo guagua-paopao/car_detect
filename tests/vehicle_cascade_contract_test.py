@@ -14,8 +14,8 @@ def main() -> None:
     config = json.loads(
         (ROOT / "config" / "vehicle_analytics.yaml").read_text(encoding="utf-8")
     )
-    if config["config_version"] != "vehicle-analytics-m3":
-        raise AssertionError("M3 runtime config must use vehicle-analytics-m3")
+    if config["config_version"] not in {"vehicle-analytics-m3", "vehicle-analytics-m4"}:
+        raise AssertionError("cascade runtime config must be M3-compatible")
     analytics = config["vehicle_analytics"]
     expected = {
         "tracking_iou_threshold": 0.30,
