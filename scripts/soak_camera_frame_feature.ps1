@@ -8,7 +8,6 @@ param(
     [string]$CameraProfile = "entry_camera_01",
     [double]$DurationMinutes = 60,
     [int]$PollSeconds = 5,
-    [switch]$RequirePeopleFlowSubscriber,
     [switch]$RequireCameraPipelineSubscriber,
     [switch]$CaptureHostTelemetry,
     [switch]$LeaveRunning,
@@ -239,20 +238,14 @@ try {
                 [int]$hub.subscriber_types.camera_task -lt 1) {
                 $sampleViolations.Add("camera_task_subscriber_missing")
             }
-            if ($RequirePeopleFlowSubscriber -and
-                (-not $hub -or
-                 [int]$hub.subscriber_types.people_flow -lt 1)) {
-                $sampleViolations.Add("people_flow_subscriber_missing")
-            }
             if ($RequireCameraPipelineSubscriber -and
                 (-not $hub -or
                  [int]$hub.subscriber_types.camera_pipeline -lt 1)) {
                 $sampleViolations.Add("camera_pipeline_subscriber_missing")
             }
             if ($RequireCameraPipelineSubscriber -and $hub -and
-                ([int]$hub.subscriber_types.people_flow -ne 0 -or
-                 [int]$hub.subscriber_types.camera_task -ne 0)) {
-                $sampleViolations.Add("legacy_subscriber_present")
+                [int]$hub.subscriber_types.camera_task -ne 0) {
+                $sampleViolations.Add("unexpected_subscriber_present")
             }
             if ($CaptureHostTelemetry) {
                 try {

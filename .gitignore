@@ -17,6 +17,21 @@
 !/models/manifests/*.json
 /datasets/
 
+# Training code is versioned; downloaded datasets, environments and generated
+# checkpoints/evidence stay local.
+/training/artifacts/
+/training/datasets/
+/training/downloads/
+/training/tools/gdown-runtime/
+/training/.venv/
+/training/runs/
+
+# Demo launch scripts/config are versioned, but source media, bundled tools and
+# captured output are reproducible local assets.
+/demo/**/sources/
+/demo/**/tools/
+/demo/**/output/
+
 # Dataset payloads stay outside Git; only versioned manifests are tracked.
 /data/raw/
 /data/interim/

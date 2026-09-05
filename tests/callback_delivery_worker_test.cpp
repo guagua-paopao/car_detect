@@ -126,14 +126,14 @@ SecurityAlertEventRecord alert(
     result.task_id = "callback_camera";
     result.run_id = "callback_run";
     result.camera_profile = "entry_camera_01";
-    result.event_type = "PEOPLE_FLOW_IN";
-    result.category = "people_flow";
+    result.event_type = "VEHICLE_TRACK_READY";
+    result.category = "vehicle";
     result.severity = 2;
     result.confidence = 0.91;
     result.track_id = 42;
     result.occurred_at_ms = created_at_ms;
     result.algorithm_profile = "security_default";
-    result.model_name = "pose";
+    result.model_name = "vehicle_detection";
     result.config_version = "callback-test-v1";
     result.payload_json = R"({"direction":"IN","line_id":"entrance"})";
     result.fingerprint = fingerprint;
@@ -190,7 +190,7 @@ int main() {
     task.analysis_enabled = true;
     task.target_infer_fps = 5.0;
     task.algorithm_profile = "security_default";
-    task.algorithms = { "people_flow" };
+    task.algorithms = { "vehicle_detection" };
     task.callback_profile = "backend_primary";
     task.version = 1;
     task.created_at_ms = stamp;

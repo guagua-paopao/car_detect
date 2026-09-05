@@ -80,7 +80,6 @@ function Test-ExpectedSubscribers([object]$Hub, [int]$MinimumCount) {
     }
     if ($RequireUnifiedCameraPipeline) {
         return [int]$Hub.subscriber_types.camera_pipeline -ge $MinimumCount -and
-            [int]$Hub.subscriber_types.people_flow -eq 0 -and
             [int]$Hub.subscriber_types.camera_task -eq 0
     }
     return [int]$Hub.subscriber_types.camera_task -ge $CameraCount
@@ -104,11 +103,10 @@ try {
             analysis = @{
                 enabled = $true
                 target_infer_fps = 10
-                algorithm_profile = "security_default"
+                algorithm_profile = "vehicle_default"
                 algorithms = @(
-                    "people_flow",
-                    "electronic_fence",
-                    "pose_action"
+                    "vehicle_detection",
+                    "vehicle_attribute"
                 )
             }
             callback_profile = "backend_primary"

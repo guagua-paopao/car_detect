@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 
-#include "business/security_analytics_types.h"
 #include "server/camera_profile.h"
 
 namespace yolo11_server {
@@ -187,12 +186,13 @@ namespace yolo11_server {
         // Fixed at process startup. Each worker owns exactly one model runner.
         int inference_workers = 2;
         int model_init_timeout_ms = 120000;
+        // Experimental cross-frame overlap. Disabled by default because the
+        // round-3 four-route hardware A/B reduced aggregate throughput.
+        bool async_result_dispatch = false;
+        int result_queue_capacity = 2;
         std::vector<std::string> supported_algorithms{
-            "people_flow",
-            "security",
-            "electronic_fence",
-            "pose_action",
-            "temporal_action"
+            "vehicle_detection",
+            "vehicle_attribute"
         };
     };
 
@@ -202,17 +202,21 @@ namespace yolo11_server {
         std::string model_registry_path =
             "./models/manifests/model_registry.v1.json";
         int observation_retention_days = 7;
+        int snapshot_fps = 2;
+        int jpeg_quality = 90;
+        // One attribute context per inference worker avoids serializing dense
+        // multi-camera traffic. Set to 1 for the low-VRAM rollback path.
+        int attribute_contexts = 2;
+        // Experimental cross-camera aggregation. Round-3 measurements keep it
+        // disabled because queueing outweighed the larger batches.
+        bool dynamic_batching = false;
+        // Periodic analysis JPEG encoding runs on a bounded CPU worker so its
+        // long tail overlaps GPU inference. Set false for synchronous rollback.
+        bool async_snapshots = true;
+        int snapshot_writer_threads = 1;
+        int snapshot_queue_capacity = 2;
     };
 
-    // People Flow -> Camera Run migration switches. R8 makes the unified
-    // runtime the default; false retains the release-cycle rollback path
-    // without changing the database or public API.
-    struct RuntimeSection {
-        bool unified_camera_pipeline = true;
-        bool people_flow_compatibility = true;
-        bool legacy_people_flow_fallback = true;
-        bool shadow_compare = false;
-    };
 
     struct CallbackProfileSection {
         bool enabled = true;
@@ -237,168 +241,6 @@ namespace yolo11_server {
         std::string config_error;
     };
 
-    struct NormalizedPoint {
-        double x = 0.0;
-        double y = 0.0;
-    };
-
-    struct PeopleFlowPersonSection {
-        int class_id = 0;
-        double conf_high = 0.45;
-        double conf_low = 0.15;
-        int min_width_px = 20;
-        int min_height_px = 40;
-        double max_aspect_ratio = 4.0;
-        std::string anchor_point = "bottom_center";
-    };
-
-    struct PeopleFlowTrackerSection {
-        int min_hits = 3;
-        int max_age_frames = 20;
-        double match_iou_threshold = 0.25;
-        double center_distance_gate_norm = 0.12;
-        double velocity_smoothing = 0.65;
-        int trail_length = 20;
-
-        // Optional time-aware alpha-beta motion filter. It is disabled by
-        // default so existing people-flow deployments retain their exact
-        // frame-based prediction behavior.
-        bool use_alpha_beta_filter = false;
-        double motion_alpha = 0.85;
-        double motion_beta = 0.05;
-        int max_prediction_ms = 1000;
-    };
-
-    struct PeopleFlowCountingSection {
-        std::string line_id = "entrance_line_01";
-        NormalizedPoint line_a_norm{ 0.25, 0.72 };
-        NormalizedPoint line_b_norm{ 0.76, 0.38 };
-        std::string transition_positive_to_negative = "IN";
-        double hysteresis_px = 12.0;
-        int min_hits_for_count = 3;
-        double finite_segment_extension_norm = 0.08;
-        double rearm_distance_px = 24.0;
-        int rearm_frames = 3;
-        int min_crossing_interval_ms = 750;
-        int max_crossing_gap_ms = 1500;
-    };
-
-    struct PeopleFlowRoiSection {
-        bool enabled = true;
-        std::vector<NormalizedPoint> polygon_norm{
-            { 0.05, 0.15 }, { 0.95, 0.15 }, { 0.95, 0.95 }, { 0.05, 0.95 }
-        };
-    };
-
-    // Phase 20 visual diagnostics. These options affect overlays and optional
-    // debug artifacts only; they are deliberately excluded from the counting
-    // configuration version. The disabled defaults preserve legacy behavior.
-    struct PeopleFlowVisualizationSection {
-        bool enabled = false;
-
-        bool draw_raw_person_detections = false;
-        bool draw_accepted_high_detections = true;
-        bool draw_accepted_low_detections = true;
-        bool draw_rejected_detections = false;
-        bool draw_rejection_reason = true;
-
-        bool draw_tentative_tracks = true;
-        bool draw_confirmed_tracks = true;
-        bool draw_missed_tracks = true;
-        bool draw_track_id = true;
-        bool draw_track_stats = true;
-        bool draw_velocity = false;
-        bool draw_anchor_points = true;
-        bool draw_trails = true;
-
-        bool draw_roi = true;
-        bool fill_roi = false;
-        bool draw_counting_line = true;
-        bool draw_line_endpoints = true;
-        bool draw_hysteresis_band = true;
-        bool draw_side_labels = true;
-        bool draw_counter_state = true;
-        bool draw_event_markers = true;
-
-        bool draw_status_panel = true;
-        bool draw_filter_statistics = true;
-        bool draw_legend = true;
-        bool compact_panel_auto = true;
-
-        bool save_event_frames = false;
-        int event_marker_hold_frames = 20;
-        bool save_debug_frame_json = false;
-
-        int box_thickness = 2;
-        int line_thickness = 2;
-        int trail_thickness = 2;
-        double font_scale = 0.55;
-        double ui_scale = 0.0;  // 0.0 selects resolution-aware automatic scaling.
-    };
-
-    struct PeopleFlowStorageSection {
-        std::string postgres_dsn_env = "YOLO11_POSTGRES_DSN";
-        int writer_queue_capacity = 10000;
-        int writer_batch_size = 100;
-        int writer_flush_interval_ms = 500;
-        int events_max_len = 10000;
-        int event_retention_days = 180;
-        int aggregate_retention_days = 730;
-        bool evidence_on_crossing = false;
-    };
-
-    // Single-machine four-stage security demonstration. This intentionally
-    // stays inside People Flow so the same frame, track id and Qt session are
-    // used from capture through presentation.
-    struct PeopleFlowSecuritySection {
-        bool enabled = false;
-        std::string mode = "demo";
-        bool draw_zones = true;
-        bool draw_pose = true;
-        bool draw_stage_panel = true;
-        int max_recent_events = 50;
-        int event_marker_hold_frames = 30;
-        double pose_match_iou_threshold = 0.10;
-        double pose_match_distance_norm = 0.15;
-        double temporal_motion_speed_px_s = 180.0;
-        std::string temporal_demo_label = "RAPID_MOTION_DEMO";
-        std::string state_file_name = "security.json";
-        std::vector<SecurityZoneConfig> zones{
-            { "restricted_demo", "Restricted Demo Zone",
-              { { 0.60, 0.18 }, { 0.94, 0.18 }, { 0.94, 0.92 }, { 0.60, 0.92 } } }
-        };
-        PoseActionConfig pose;
-        TemporalActionConfig temporal;
-    };
-
-    // Phase 20-23 business configuration. Defaults keep the existing seven
-    // services unchanged because people_flow.enabled is false.
-    struct PeopleFlowSection {
-        bool enabled = false;
-        std::string camera_id = "entry_camera_01";
-        std::string camera_profile = "entry_camera_01";
-        std::string config_version = "entry-line-v1";
-        std::string output_dir = "./runtime/output/people_flow";
-        std::string report_dir = "./reports/people_flow";
-        int target_infer_fps = 10;
-        int snapshot_fps = 2;
-        int jpeg_quality = 90;
-        int initial_occupancy = 0;
-        int warmup_frames_after_reconnect = 10;
-        int active_ttl_seconds = 60;
-        int realtime_ttl_seconds = 10;
-        int session_ttl_seconds = 604800;
-        int stale_timeout_ms = 30000;
-        std::string admin_token_env = "YOLO11_CAMERA_TASK_ADMIN_TOKEN";
-        PeopleFlowPersonSection person;
-        PeopleFlowTrackerSection tracker;
-        PeopleFlowCountingSection counting;
-        PeopleFlowRoiSection roi;
-        PeopleFlowVisualizationSection visualization;
-        PeopleFlowStorageSection storage;
-        PeopleFlowSecuritySection security;
-        std::string config_error;
-    };
 
     struct RedisSection {
         bool enabled = true;
@@ -505,9 +347,7 @@ namespace yolo11_server {
         CameraTasksSection camera_tasks;
         AnalysisSection analysis;
         VehicleAnalyticsServiceSection vehicle_analytics;
-        RuntimeSection runtime;
         CallbackDeliverySection callbacks;
-        PeopleFlowSection people_flow;
         RedisSection redis;
         LoggingSection logging;
         WorkerSection worker;

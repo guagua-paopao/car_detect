@@ -65,9 +65,8 @@ int main() {
     heartbeat.worker_id = 1;
     heartbeat.worker_kind = "vision_host";
     heartbeat.task_kind = "camera_pipeline";
-    heartbeat.runtime_mode = "unified_camera_pipeline";
+    heartbeat.runtime_mode = "vehicle_camera_pipeline";
     heartbeat.worker_generation = "123:1784800000000";
-    heartbeat.legacy_people_flow_role = false;
     heartbeat.camera_task_manager_running = true;
     heartbeat.hub_registry_ready = true;
     heartbeat.coordination_healthy = true;
@@ -88,12 +87,29 @@ int main() {
     runtime.inference_processed_jobs = 96;
     runtime.inference_failed_jobs = 1;
     runtime.inference_stale_results = 2;
+    runtime.inference_pending_result_jobs = 1;
+    runtime.inference_maximum_pending_result_jobs = 2;
+    runtime.inference_handled_result_jobs = 94;
     runtime.processor_running = true;
     runtime.processor_active_sessions = 3;
     runtime.processor_processed_frames = 96;
     runtime.processor_persisted_alerts = 7;
     runtime.processor_duplicate_alerts = 2;
     runtime.processor_failed_frames = 1;
+    runtime.attribute_scheduler_running = true;
+    runtime.attribute_scheduler_requests = 31;
+    runtime.attribute_scheduler_completed_requests = 30;
+    runtime.attribute_scheduler_failed_requests = 1;
+    runtime.attribute_scheduler_batches = 14;
+    runtime.attribute_scheduler_crops = 87;
+    runtime.attribute_scheduler_pending_requests = 1;
+    runtime.attribute_scheduler_maximum_pending_requests = 4;
+    runtime.attribute_scheduler_pending_crops = 2;
+    runtime.attribute_scheduler_maximum_pending_crops = 16;
+    runtime.attribute_scheduler_mean_queue_wait_ms = 1.25;
+    runtime.attribute_scheduler_p95_queue_wait_ms = 2.0;
+    runtime.attribute_scheduler_p99_queue_wait_ms = 2.5;
+    runtime.attribute_scheduler_maximum_queue_wait_ms = 3.75;
     runtime.callbacks_configured = true;
     runtime.callback_running = true;
     runtime.callback_profiles_ready = 1;
@@ -119,10 +135,9 @@ int main() {
         "algorithm runtime heartbeat must read: " + error);
     const auto& loaded = records.front().algorithm_runtime;
     require(records.front().runtime_mode ==
-                "unified_camera_pipeline" &&
+                "vehicle_camera_pipeline" &&
             records.front().worker_generation ==
                 heartbeat.worker_generation &&
-            !records.front().legacy_people_flow_role &&
             records.front().camera_task_manager_running &&
             records.front().hub_registry_ready &&
             records.front().coordination_healthy &&
@@ -133,8 +148,22 @@ int main() {
             loaded.inference_workers_ready == 2 &&
             loaded.inference_submitted_jobs == 101 &&
             loaded.inference_stale_results == 2 &&
+            loaded.inference_pending_result_jobs == 1 &&
+            loaded.inference_maximum_pending_result_jobs == 2 &&
+            loaded.inference_handled_result_jobs == 94 &&
             loaded.processor_active_sessions == 3 &&
             loaded.processor_persisted_alerts == 7 &&
+            loaded.attribute_scheduler_running &&
+            loaded.attribute_scheduler_requests == 31 &&
+            loaded.attribute_scheduler_completed_requests == 30 &&
+            loaded.attribute_scheduler_failed_requests == 1 &&
+            loaded.attribute_scheduler_batches == 14 &&
+            loaded.attribute_scheduler_crops == 87 &&
+            loaded.attribute_scheduler_maximum_pending_crops == 16 &&
+            loaded.attribute_scheduler_mean_queue_wait_ms == 1.25 &&
+            loaded.attribute_scheduler_p95_queue_wait_ms == 2.0 &&
+            loaded.attribute_scheduler_p99_queue_wait_ms == 2.5 &&
+            loaded.attribute_scheduler_maximum_queue_wait_ms == 3.75 &&
             loaded.callback_profiles_ready == 1 &&
             loaded.callback_delivered == 6 &&
             loaded.callback_dead_letters == 1 &&

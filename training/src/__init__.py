@@ -1,0 +1,1 @@
+"""Shared VCAS training components."""

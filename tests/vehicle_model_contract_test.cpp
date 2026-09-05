@@ -163,6 +163,19 @@ int main() {
     owned->row_stride_bytes = 16 * 3;
     assert(owned->valid());
     assert(owned->view().valid());
+    auto i420_bytes = std::make_shared<std::vector<std::uint8_t>>(16 * 16 * 3 / 2);
+    OwnedI420Image owned_i420;
+    owned_i420.bytes = i420_bytes;
+    owned_i420.width = 16;
+    owned_i420.height = 16;
+    owned_i420.y_offset = 0;
+    owned_i420.u_offset = 16 * 16;
+    owned_i420.v_offset = 16 * 16 + 16 * 16 / 4;
+    owned_i420.y_stride_bytes = 16;
+    owned_i420.u_stride_bytes = 8;
+    owned_i420.v_stride_bytes = 8;
+    assert(owned_i420.valid());
+    assert(owned_i420.view().valid());
 
     FakeDetectionRunner detector;
     assert(detector.initialize(*registry.find(VehicleModelRole::Detection), error));

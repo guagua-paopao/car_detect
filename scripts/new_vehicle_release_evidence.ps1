@@ -77,7 +77,7 @@ $hashInputs = @(
     "models/manifests/model_registry.v1.json",
     "db/postgresql/001_initial_schema.sql",
     "db/postgresql/002_algorithm_service_contract.sql",
-    "db/postgresql/003_people_flow_camera_unification.sql",
+    "db/postgresql/003_vehicle_analysis_state.sql",
     "db/postgresql/004_vehicle_events.sql"
 )
 $hashes = @()

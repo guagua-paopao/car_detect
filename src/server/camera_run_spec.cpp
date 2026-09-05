@@ -27,8 +27,7 @@ CameraRunSpec::CameraRunSpec(
     CameraRunFrameOutputSpec frame_output,
     CameraRunAnalysisSpec analysis,
     std::string callback_profile,
-    long long create_time_ms,
-    CameraRunCompatibilitySpec compatibility
+    long long create_time_ms
 ) : run_id_(std::move(run_id)),
     task_id_(std::move(task_id)),
     origin_(std::move(origin)),
@@ -37,8 +36,7 @@ CameraRunSpec::CameraRunSpec(
     frame_output_(std::move(frame_output)),
     analysis_(std::move(analysis)),
     callback_profile_(std::move(callback_profile)),
-    create_time_ms_(create_time_ms),
-    compatibility_(std::move(compatibility)) {
+    create_time_ms_(create_time_ms) {
 }
 
 std::string CameraRunSpec::toDefinitionJson() const {
@@ -76,17 +74,11 @@ std::string CameraRunSpec::toDefinitionJson() const {
             {"algorithm_profile", analysis_.algorithm_profile},
             {"algorithms", analysis_.algorithms},
             {"config_version", analysis_.config_version},
-            {"initial_occupancy", analysis_.initial_occupancy},
             {"snapshot_fps", analysis_.snapshot_fps},
             {"algorithm_parameters", parsedObject(analysis_.algorithm_parameters_json)}
         }},
         {"callback_profile", callback_profile_},
-        {"create_time_ms", create_time_ms_},
-        {"compatibility", {
-            {"legacy_session_id", compatibility_.legacy_session_id},
-            {"preserve_pf_projection", compatibility_.preserve_pf_projection},
-            {"legacy_response_version", compatibility_.legacy_response_version}
-        }}
+        {"create_time_ms", create_time_ms_}
     }).dump();
 }
 
@@ -101,7 +93,6 @@ CameraTaskRunRecord CameraRunSpec::toRunRecord() const {
     run.create_time_ms = create_time_ms_;
     run.last_update_ms = create_time_ms_;
     run.origin = origin_;
-    run.legacy_session_id = compatibility_.legacy_session_id;
     run.analysis_config_version = analysis_.config_version;
     return run;
 }
@@ -127,12 +118,8 @@ CameraTaskCommand CameraRunSpec::toStartCommand() const {
     command.create_time_ms = create_time_ms_;
     command.origin = origin_;
     command.analysis_config_version = analysis_.config_version;
-    command.initial_occupancy = analysis_.initial_occupancy;
     command.snapshot_fps = analysis_.snapshot_fps;
     command.algorithm_parameters_json = analysis_.algorithm_parameters_json;
-    command.legacy_session_id = compatibility_.legacy_session_id;
-    command.preserve_pf_projection = compatibility_.preserve_pf_projection;
-    command.legacy_response_version = compatibility_.legacy_response_version;
     return command;
 }
 
@@ -158,7 +145,6 @@ CameraRunSpec makeCameraRunSpec(
     analysis.algorithm_profile = definition.algorithm_profile;
     analysis.algorithms = definition.algorithms;
     analysis.config_version = std::move(options.analysis_config_version);
-    analysis.initial_occupancy = std::max(0LL, options.initial_occupancy);
     analysis.snapshot_fps = std::max(0, options.snapshot_fps);
     analysis.algorithm_parameters_json =
         parsedObject(options.algorithm_parameters_json).dump();
@@ -172,8 +158,7 @@ CameraRunSpec makeCameraRunSpec(
         std::move(frame_output),
         std::move(analysis),
         definition.callback_profile,
-        create_time_ms,
-        std::move(options.compatibility));
+        create_time_ms);
 }
 
 }  // namespace yolo11_server

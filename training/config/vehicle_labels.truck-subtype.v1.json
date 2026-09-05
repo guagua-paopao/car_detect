@@ -1,0 +1,19 @@
+{
+  "schema_version": "2.0-specialist",
+  "labels_version": "vehicle-labels-v2-offline-candidate",
+  "deployment_status": "isolated_research_candidate_only",
+  "body_types": [
+    "light_truck",
+    "heavy_truck",
+    "unknown"
+  ],
+  "colors": [
+    "unknown"
+  ],
+  "unknown_policy": {
+    "body_type_allows_unknown": true,
+    "color_is_never_supervised": true,
+    "generic_truck_is_excluded_from_fine_training": true,
+    "router_must_fall_back_to_generic_truck_when_subtype_is_uncertain": true
+  }
+}

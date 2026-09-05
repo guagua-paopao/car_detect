@@ -44,17 +44,27 @@ foreach ($artifact in $registry.artifacts) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $engine) | Out-Null
     $modelInput = $artifact.input
     $batch = [int]$artifact.deployment.max_batch
-    $shape = "images:{0}x3x{1}x{2}" -f $batch, $modelInput.height, $modelInput.width
     $arguments = @(
         "--onnx=$onnx",
         "--saveEngine=$engine",
         "--fp16",
-        "--skipInference",
+        "--skipInference"
+    )
+    $shape = "images:{0}x3x{1}x{2}" -f $batch, $modelInput.height, $modelInput.width
+    $profileArguments = @(
         "--minShapes=images:1x3x$($modelInput.height)x$($modelInput.width)",
         "--optShapes=$shape",
         "--maxShapes=$shape"
     )
-    & $TrtExec @arguments
+    $profiledArguments = $arguments + $profileArguments
+    & $TrtExec @profiledArguments
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning (
+            "Profiled build failed for $($artifact.artifact_id); " +
+            "retrying as a static-shape ONNX model."
+        )
+        & $TrtExec @arguments
+    }
     if ($LASTEXITCODE -ne 0) {
         throw "trtexec failed for $($artifact.artifact_id)"
     }

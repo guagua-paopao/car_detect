@@ -16,7 +16,6 @@
 
 namespace yolo11_server {
 
-class PeopleFlowInferenceWorker;
 class CameraTaskRepository;
 class CameraAlgorithmProcessor;
 class CameraInferencePool;
@@ -37,7 +36,7 @@ public:
     VisionWorkerHost(
         int worker_id,
         const AppConfig& config,
-        std::string people_flow_consumer_name,
+        std::string consumer_name,
         CameraTaskManagerFactory camera_manager_factory = {}
     );
     ~VisionWorkerHost() noexcept;
@@ -53,7 +52,6 @@ public:
     CameraInferencePoolSnapshot inferenceSnapshot() const;
     CallbackDeliverySnapshot callbackSnapshot() const;
     AlgorithmRuntimeSnapshot algorithmRuntimeSnapshot() const;
-    bool legacyPeopleFlowRoleRunning() const;
     bool coordinationHealthy() const;
 
 private:
@@ -64,10 +62,9 @@ private:
 
     int worker_id_ = 0;
     AppConfig config_;
-    std::string people_flow_consumer_name_;
+    std::string consumer_name_;
     CameraTaskManagerFactory camera_manager_factory_;
     std::shared_ptr<SharedCameraFrameHubRegistry> hub_registry_;
-    std::unique_ptr<PeopleFlowInferenceWorker> people_flow_worker_;
     std::shared_ptr<CameraTaskRepository> camera_repository_;
     std::shared_ptr<CameraAlgorithmProcessor> camera_algorithm_processor_;
     std::shared_ptr<CameraTaskQueue> camera_analysis_status_queue_;

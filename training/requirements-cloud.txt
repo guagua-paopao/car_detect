@@ -1,0 +1,9 @@
+# PyTorch and torchvision must come from the provider's matched CUDA image.
+ultralytics
+fiftyone
+onnx
+onnxruntime-gpu==1.26.0
+tensorboard
+pandas
+Pillow
+scikit-learn

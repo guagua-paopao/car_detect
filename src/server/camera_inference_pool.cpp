@@ -60,6 +60,11 @@ bool CameraInferencePool::start(std::string& error) {
             shards_.push_back(std::make_unique<WorkerShard>(worker_id));
         }
         for (auto& shard : shards_) {
+            if (config_.analysis.async_result_dispatch) {
+                shard->result_thread = std::thread([this, state = shard.get()]() {
+                    resultLoop(*state);
+                });
+            }
             shard->thread = std::thread([this, state = shard.get()]() {
                 workerLoop(*state);
             });
@@ -215,7 +220,7 @@ bool CameraInferencePool::submitLatest(
         return false;
     }
     if (job.task_id.empty() || job.run_id.empty() || job.algorithm_profile.empty() ||
-        job.algorithms.empty() || !job.frame || job.frame->image.empty() ||
+        job.algorithms.empty() || !job.frame || !job.frame->valid() ||
         job.source_sequence == 0) {
         error = "INVALID_INFERENCE_JOB";
         return false;
@@ -313,12 +318,20 @@ CameraInferencePoolSnapshot CameraInferencePool::snapshot() const {
         std::lock_guard<std::mutex> lock(shard->mutex);
         result.active_cameras += shard->active.size();
         result.pending_cameras += shard->pending.size();
+        {
+            std::lock_guard<std::mutex> result_lock(shard->result_mutex);
+            result.pending_result_jobs += shard->result_queue.size();
+            result.maximum_pending_result_jobs = std::max(
+                result.maximum_pending_result_jobs,
+                shard->maximum_result_queue_depth);
+        }
     }
     result.submitted_jobs = submitted_jobs_.load();
     result.replaced_jobs = replaced_jobs_.load();
     result.processed_jobs = processed_jobs_.load();
     result.failed_jobs = failed_jobs_.load();
     result.stale_results = stale_results_.load();
+    result.handled_result_jobs = handled_result_jobs_.load();
     return result;
 }
 
@@ -376,7 +389,7 @@ void CameraInferencePool::workerLoop(WorkerShard& shard) noexcept {
             result.job = std::move(queued.job);
             try {
                 const auto started = std::chrono::steady_clock::now();
-                result.output = runner->infer(result.job.frame->image);
+                result.output = runner->infer(*result.job.frame);
                 result.inference_ms = std::chrono::duration<double, std::milli>(
                     std::chrono::steady_clock::now() - started).count();
                 ++processed_jobs_;
@@ -394,12 +407,20 @@ void CameraInferencePool::workerLoop(WorkerShard& shard) noexcept {
                     continue;
                 }
 
-                std::string handler_error;
-                if (!result_handler_->handle(result, handler_error)) {
-                    ++failed_jobs_;
-                    spdlog::warn(
-                        "Camera inference result handling failed: camera_id={}, run_id={}, error={}",
-                        result.job.task_id, result.job.run_id, handler_error);
+                if (config_.analysis.async_result_dispatch) {
+                    if (!dispatchResult(
+                            shard, std::move(result), queued.generation)) {
+                        ++stale_results_;
+                    }
+                }
+                else {
+                    std::string handler_error;
+                    if (!result_handler_->handle(result, handler_error)) {
+                        ++failed_jobs_;
+                        spdlog::warn(
+                            "Camera inference result handling failed: camera_id={}, run_id={}, error={}",
+                            result.job.task_id, result.job.run_id, handler_error);
+                    }
                 }
             }
             catch (const std::exception& exception) {
@@ -426,6 +447,84 @@ void CameraInferencePool::workerLoop(WorkerShard& shard) noexcept {
     if (workers_ready_.load() > 0) --workers_ready_;
 }
 
+bool CameraInferencePool::dispatchResult(
+    WorkerShard& shard,
+    CameraInferenceResult result,
+    std::uint64_t generation) noexcept {
+    try {
+        std::unique_lock<std::mutex> lock(shard.result_mutex);
+        shard.result_capacity_available.wait(lock, [&]() {
+            return shard.result_stop_requested ||
+                shard.result_queue.size() < static_cast<std::size_t>(
+                    config_.analysis.result_queue_capacity);
+        });
+        if (shard.result_stop_requested) return false;
+        shard.result_queue.push_back({std::move(result), generation});
+        shard.maximum_result_queue_depth = std::max(
+            shard.maximum_result_queue_depth, shard.result_queue.size());
+        lock.unlock();
+        shard.result_ready.notify_one();
+        return true;
+    }
+    catch (...) {
+        return false;
+    }
+}
+
+void CameraInferencePool::resultLoop(WorkerShard& shard) noexcept {
+    while (true) {
+        QueuedResult queued;
+        {
+            std::unique_lock<std::mutex> lock(shard.result_mutex);
+            shard.result_ready.wait(lock, [&]() {
+                return shard.result_stop_requested ||
+                    !shard.result_queue.empty();
+            });
+            if (shard.result_stop_requested && shard.result_queue.empty()) break;
+            queued = std::move(shard.result_queue.front());
+            shard.result_queue.pop_front();
+        }
+        shard.result_capacity_available.notify_one();
+
+        bool current = false;
+        {
+            std::lock_guard<std::mutex> lock(shard.mutex);
+            const auto active = shard.active.find(queued.result.job.task_id);
+            current = active != shard.active.end() &&
+                active->second.run_id == queued.result.job.run_id &&
+                active->second.generation == queued.generation;
+        }
+        if (!current) {
+            ++stale_results_;
+            continue;
+        }
+        try {
+            std::string handler_error;
+            if (!result_handler_->handle(queued.result, handler_error)) {
+                ++failed_jobs_;
+                spdlog::warn(
+                    "Asynchronous camera result handling failed: camera_id={}, run_id={}, error={}",
+                    queued.result.job.task_id,
+                    queued.result.job.run_id,
+                    handler_error);
+            }
+            ++handled_result_jobs_;
+        }
+        catch (const std::exception& exception) {
+            ++failed_jobs_;
+            spdlog::error(
+                "Asynchronous camera result handling threw: camera_id={}, run_id={}, error={}",
+                queued.result.job.task_id,
+                queued.result.job.run_id,
+                exception.what());
+        }
+        catch (...) {
+            ++failed_jobs_;
+            spdlog::error("Asynchronous camera result handling threw unknown exception");
+        }
+    }
+}
+
 void CameraInferencePool::stopWorkersNoexcept() noexcept {
     try {
         for (auto& shard : shards_) {
@@ -437,6 +536,17 @@ void CameraInferencePool::stopWorkersNoexcept() noexcept {
         }
         for (auto& shard : shards_) {
             if (shard->thread.joinable()) shard->thread.join();
+        }
+        for (auto& shard : shards_) {
+            {
+                std::lock_guard<std::mutex> lock(shard->result_mutex);
+                shard->result_stop_requested = true;
+            }
+            shard->result_ready.notify_all();
+            shard->result_capacity_available.notify_all();
+        }
+        for (auto& shard : shards_) {
+            if (shard->result_thread.joinable()) shard->result_thread.join();
         }
     }
     catch (...) {

@@ -79,6 +79,63 @@ FusedAttribute fuseHead(
     return fused;
 }
 
+struct HeadCandidate {
+    std::string label = "unknown";
+    float confidence = 0.0f;
+    std::size_t samples_used = 0;
+};
+
+HeadCandidate candidateForHead(
+    const std::vector<VehicleAttributeResult>& items,
+    bool body_type) {
+    std::map<std::string, float> weights;
+    std::map<std::string, std::size_t> counts;
+    float total_quality = 0.0f;
+    for (const auto& item : items) {
+        const auto& prediction = body_type ? item.body_type : item.color;
+        const float quality = clamp01(item.quality_score);
+        total_quality += quality;
+        if (prediction.label == "unknown") continue;
+        weights[prediction.label] += quality * clamp01(prediction.confidence);
+        counts[prediction.label] += 1;
+    }
+    if (weights.empty() || total_quality <= 0.0f) return {};
+    const auto best = std::max_element(
+        weights.begin(), weights.end(),
+        [](const auto& left, const auto& right) {
+            if (left.second != right.second) return left.second < right.second;
+            return left.first > right.first;
+        });
+    return {best->first, clamp01(best->second / total_quality), counts[best->first]};
+}
+
+float weightedEvidenceForLabel(
+    const std::vector<VehicleAttributeResult>& items,
+    bool body_type,
+    const std::string& label) {
+    float evidence = 0.0f;
+    for (const auto& item : items) {
+        const auto& prediction = body_type ? item.body_type : item.color;
+        if (prediction.label != label) continue;
+        evidence += clamp01(item.quality_score) * clamp01(prediction.confidence);
+    }
+    return evidence;
+}
+
+float highestQualityForLabel(
+    const std::vector<VehicleAttributeResult>& items,
+    bool body_type,
+    const std::string& label) {
+    float quality = 0.0f;
+    for (const auto& item : items) {
+        const auto& prediction = body_type ? item.body_type : item.color;
+        if (prediction.label == label) {
+            quality = std::max(quality, clamp01(item.quality_score));
+        }
+    }
+    return quality;
+}
+
 }  // namespace
 
 std::string_view toString(VehicleTrackState state) noexcept {
@@ -439,6 +496,132 @@ CropQualityAssessment VehicleCropQualityGate::assess(
     return result;
 }
 
+CropQualityAssessment VehicleCropQualityGate::assess(
+    const I420ImageView& frame,
+    const VehicleBox& box,
+    float occlusion_fraction,
+    bool truncated) const {
+    CropQualityAssessment result;
+    if (!frame.valid() || !box.valid()) {
+        result.reason = "invalid_input";
+        return result;
+    }
+    occlusion_fraction = clamp01(occlusion_fraction);
+    const int left = std::max(
+        0,
+        static_cast<int>(std::floor(box.x1 * static_cast<float>(frame.width))));
+    const int top = std::max(
+        0,
+        static_cast<int>(std::floor(box.y1 * static_cast<float>(frame.height))));
+    const int right = std::min(
+        frame.width,
+        static_cast<int>(std::ceil(box.x2 * static_cast<float>(frame.width))));
+    const int bottom = std::min(
+        frame.height,
+        static_cast<int>(std::ceil(box.y2 * static_cast<float>(frame.height))));
+    result.crop_width_px = right - left;
+    result.crop_height_px = bottom - top;
+    if (result.crop_width_px <= 0 || result.crop_height_px <= 0) {
+        result.reason = "empty_crop";
+        return result;
+    }
+
+    const auto saturate = [](int value) {
+        return value < 0 ? 0 : (value > 255 ? 255 : value);
+    };
+    const auto intensity_at = [&](int x, int y) {
+        const int y_value = std::max(
+            0,
+            static_cast<int>(frame.y_plane[
+                static_cast<std::size_t>(y) * frame.y_stride_bytes + x]) - 16);
+        const auto chroma_offset = static_cast<std::size_t>(y / 2) *
+            frame.u_stride_bytes + x / 2;
+        const int u_value =
+            static_cast<int>(frame.u_plane[chroma_offset]) - 128;
+        const int v_value = static_cast<int>(frame.v_plane[
+            static_cast<std::size_t>(y / 2) * frame.v_stride_bytes + x / 2]) - 128;
+        constexpr int shift = 20;
+        constexpr int rounding = 1 << (shift - 1);
+        const int scaled_y = y_value * 1220542;
+        const int red = saturate(
+            (scaled_y + 1673527 * v_value + rounding) >> shift);
+        const int green = saturate(
+            (scaled_y - 409993 * u_value - 852492 * v_value + rounding) >> shift);
+        const int blue = saturate(
+            (scaled_y + 2116026 * u_value + rounding) >> shift);
+        return static_cast<float>(red + green + blue) / 3.0f;
+    };
+    double intensity_sum = 0.0;
+    double gradient_sum = 0.0;
+    std::size_t intensity_count = 0;
+    std::size_t gradient_count = 0;
+    for (int y = top; y < bottom; ++y) {
+        float previous = 0.0f;
+        for (int x = left; x < right; ++x) {
+            const float current = intensity_at(x, y);
+            intensity_sum += current;
+            ++intensity_count;
+            if (x > left) {
+                gradient_sum += std::abs(current - previous);
+                ++gradient_count;
+            }
+            previous = current;
+        }
+    }
+    result.exposure = intensity_count == 0
+        ? 0.0f
+        : static_cast<float>(intensity_sum / intensity_count / 255.0);
+    result.sharpness = gradient_count == 0
+        ? 0.0f
+        : static_cast<float>(gradient_sum / gradient_count / 255.0);
+
+    const float width_score = std::min(
+        1.0f,
+        static_cast<float>(result.crop_width_px) /
+            static_cast<float>(config_.min_width_px));
+    const float height_score = std::min(
+        1.0f,
+        static_cast<float>(result.crop_height_px) /
+            static_cast<float>(config_.min_height_px));
+    const float size_score = std::min(width_score, height_score);
+    const float sharpness_score = config_.min_sharpness <= 0.0f
+        ? 1.0f
+        : std::min(1.0f, result.sharpness / config_.min_sharpness);
+    const float exposure_score =
+        clamp01(1.0f - std::abs(result.exposure - 0.5f) / 0.5f);
+    const float visibility_score = 1.0f - occlusion_fraction;
+    const float truncation_score = truncated ? 0.0f : 1.0f;
+    result.quality_score = clamp01(
+        0.25f * size_score +
+        0.25f * sharpness_score +
+        0.20f * exposure_score +
+        0.20f * visibility_score +
+        0.10f * truncation_score);
+
+    if (result.crop_width_px < config_.min_width_px ||
+        result.crop_height_px < config_.min_height_px) {
+        result.reason = "crop_too_small";
+    }
+    else if (result.sharpness < config_.min_sharpness) {
+        result.reason = "crop_too_blurry";
+    }
+    else if (result.exposure < config_.min_exposure ||
+        result.exposure > config_.max_exposure) {
+        result.reason = "exposure_out_of_range";
+    }
+    else if (occlusion_fraction > config_.max_occlusion) {
+        result.reason = "too_occluded";
+    }
+    else if (truncated && config_.reject_truncated) {
+        result.reason = "truncated";
+    }
+    else {
+        result.eligible = true;
+        result.reason = "accepted";
+    }
+    return result;
+}
+
 std::shared_ptr<const OwnedImage> VehicleCropQualityGate::copyCrop(
     const ImageView& frame,
     const VehicleBox& box,
@@ -504,7 +687,12 @@ bool VehicleAttributeCandidateQueue::submit(
     VehicleAttributeCrop crop,
     std::string& error) {
     error.clear();
-    if (!crop.crop || !crop.crop->valid() ||
+    const bool valid_pixels = crop.crop && crop.crop->valid();
+    const bool valid_i420_roi = crop.i420_frame &&
+        crop.i420_frame->valid() && crop.source_box.valid();
+    const bool valid_device_i420_roi = crop.device_i420_frame &&
+        crop.device_i420_frame->valid() && crop.source_box.valid();
+    if ((!valid_pixels && !valid_i420_roi && !valid_device_i420_roi) ||
         crop.camera_id.empty() ||
         crop.run_id.empty() ||
         crop.track_id <= 0 ||
@@ -606,6 +794,89 @@ VehicleTrackAttributeAggregator::VehicleTrackAttributeAggregator(
         config_.max_observations);
     config_.body_type_threshold = clamp01(config_.body_type_threshold);
     config_.color_threshold = clamp01(config_.color_threshold);
+    config_.switch_confirmations = std::max<std::size_t>(1, config_.switch_confirmations);
+    config_.conflict_unknown_after = std::max<std::size_t>(1, config_.conflict_unknown_after);
+    config_.reverse_quality_ratio = clamp01(config_.reverse_quality_ratio);
+    config_.switch_override_ratio = std::max(1.0f, config_.switch_override_ratio);
+}
+
+void VehicleTrackAttributeAggregator::updateStableState(
+    TrackObservations& track,
+    const VehicleAttributeResult& latest) {
+    const auto update_head = [this, &track, &latest](bool body_type) {
+        const auto candidate = candidateForHead(track.items, body_type);
+        const float threshold = body_type ? config_.body_type_threshold : config_.color_threshold;
+        auto& stable_label = body_type ? track.stable_body_label : track.stable_color_label;
+        auto& stable_confidence = body_type ? track.stable_body_confidence : track.stable_color_confidence;
+        auto& pending_label = body_type ? track.pending_body_label : track.pending_color_label;
+        auto& reverse_evidence = body_type ? track.body_reverse_evidence : track.color_reverse_evidence;
+        auto& conflict_evidence = body_type ? track.body_conflict_evidence : track.color_conflict_evidence;
+        const auto clear_conflict = [&]() {
+            pending_label = "unknown";
+            reverse_evidence = 0;
+            conflict_evidence = 0;
+        };
+        if (stable_label == "unknown") {
+            if (candidate.label == "unknown" ||
+                candidate.samples_used < config_.min_samples ||
+                candidate.confidence < threshold) {
+                clear_conflict();
+                return;
+            }
+            stable_label = candidate.label;
+            stable_confidence = candidate.confidence;
+            clear_conflict();
+            return;
+        }
+        const auto& latest_prediction = body_type ? latest.body_type : latest.color;
+        if (latest_prediction.label == stable_label) {
+            if (candidate.label == stable_label) stable_confidence = candidate.confidence;
+            clear_conflict();
+            return;
+        }
+        // Low-quality, unknown, or weak frames cannot overwrite trusted state
+        // and do not create a visible conflict by themselves.
+        const float retained_quality = highestQualityForLabel(
+            track.items, body_type, stable_label);
+        if (latest_prediction.label == "unknown" ||
+            latest_prediction.confidence < threshold ||
+            latest.quality_score <= 0.0f ||
+            (retained_quality > 0.0f &&
+             latest.quality_score < retained_quality * config_.reverse_quality_ratio)) {
+            clear_conflict();
+            return;
+        }
+
+        conflict_evidence += 1;
+        if (pending_label == latest_prediction.label) {
+            reverse_evidence += 1;
+        }
+        else {
+            pending_label = latest_prediction.label;
+            reverse_evidence = 1;
+        }
+
+        const float replacement_evidence = weightedEvidenceForLabel(
+            track.items, body_type, pending_label);
+        const float retained_evidence = weightedEvidenceForLabel(
+            track.items, body_type, stable_label);
+        const bool dominates = retained_evidence <= 0.0f ||
+            replacement_evidence >= retained_evidence * config_.switch_override_ratio;
+        if (reverse_evidence >= config_.switch_confirmations && dominates) {
+            stable_label = latest_prediction.label;
+            stable_confidence = latest_prediction.confidence;
+            clear_conflict();
+            metrics_.label_switches += 1;
+        }
+    };
+    update_head(true);
+    update_head(false);
+    if (!track.counted_stable &&
+        track.stable_body_label != "unknown" &&
+        track.stable_color_label != "unknown") {
+        track.counted_stable = true;
+        metrics_.tracks_stabilized += 1;
+    }
 }
 
 bool VehicleTrackAttributeAggregator::add(
@@ -656,6 +927,7 @@ bool VehicleTrackAttributeAggregator::add(
     if (track.items.size() > config_.max_observations) {
         track.items.resize(config_.max_observations);
     }
+    updateStableState(track, result);
     metrics_.accepted += 1;
     return true;
 }
@@ -671,6 +943,26 @@ VehicleTrackAttributeAggregator::snapshot(const VehicleTrackKey& key) const {
     result.observation_count = it->second.items.size();
     result.body_type = fuseHead(it->second.items, true, config_);
     result.color = fuseHead(it->second.items, false, config_);
+    const bool body_conflicted =
+        it->second.body_conflict_evidence >= config_.conflict_unknown_after;
+    const bool color_conflicted =
+        it->second.color_conflict_evidence >= config_.conflict_unknown_after;
+    if (it->second.stable_body_label != "unknown" && !body_conflicted) {
+        result.body_type.label = it->second.stable_body_label;
+        result.body_type.confidence = it->second.stable_body_confidence;
+        result.body_type.stable = true;
+    }
+    else if (body_conflicted) {
+        result.body_type = {};
+    }
+    if (it->second.stable_color_label != "unknown" && !color_conflicted) {
+        result.color.label = it->second.stable_color_label;
+        result.color.confidence = it->second.stable_color_confidence;
+        result.color.stable = true;
+    }
+    else if (color_conflicted) {
+        result.color = {};
+    }
     return result;
 }
 
@@ -750,6 +1042,64 @@ bool VehicleCascadeRuntime::queueCrop(
     if (!crop_image) return false;
     VehicleAttributeCrop crop;
     crop.crop = std::move(crop_image);
+    crop.camera_id = camera_id_;
+    crop.run_id = run_id_;
+    crop.run_generation = run_generation_;
+    crop.track_id = track_id;
+    crop.crop_sequence = crop_sequence;
+    crop.quality_score = assessment.quality_score;
+    if (!attribute_queue_.submit(std::move(crop), error)) return false;
+    return tracker_.markAttributeCollecting(track_id, error);
+}
+
+bool VehicleCascadeRuntime::queueCrop(
+    std::shared_ptr<const OwnedI420Image> frame,
+    std::int64_t track_id,
+    std::uint64_t crop_sequence,
+    float occlusion_fraction,
+    bool truncated,
+    CropQualityAssessment& assessment,
+    std::string& error) {
+    return queueCrop(
+        std::move(frame), {}, track_id, crop_sequence,
+        occlusion_fraction, truncated, assessment, error);
+}
+
+bool VehicleCascadeRuntime::queueCrop(
+    std::shared_ptr<const OwnedI420Image> frame,
+    std::shared_ptr<const DeviceI420Image> device_frame,
+    std::int64_t track_id,
+    std::uint64_t crop_sequence,
+    float occlusion_fraction,
+    bool truncated,
+    CropQualityAssessment& assessment,
+    std::string& error) {
+    const auto track = tracker_.find(track_id);
+    if (!track) {
+        error = "track_id is not active";
+        return false;
+    }
+    if (track->state != VehicleTrackState::Confirmed &&
+        track->state != VehicleTrackState::AttributeCollecting) {
+        error = "track is not eligible for attribute collection";
+        return false;
+    }
+    if (!frame || !frame->valid()) {
+        error = "attribute I420 frame is invalid";
+        return false;
+    }
+    assessment = crop_quality_.assess(
+        frame->view(), track->box, occlusion_fraction, truncated);
+    if (!assessment.eligible) {
+        error = "crop rejected: " + assessment.reason;
+        return false;
+    }
+    VehicleAttributeCrop crop;
+    crop.i420_frame = std::move(frame);
+    if (device_frame && device_frame->valid()) {
+        crop.device_i420_frame = std::move(device_frame);
+    }
+    crop.source_box = track->box;
     crop.camera_id = camera_id_;
     crop.run_id = run_id_;
     crop.run_generation = run_generation_;

@@ -126,9 +126,7 @@ function Get-CompactCameraStatus([string]$CameraId) {
             last_inference_ms = [double]$status.analysis.last_inference_ms
             frame_count = [int64]$status.analysis.frame_count
             last_update_ms = [int64]$status.analysis.last_update_ms
-            live_persons = [int]$status.analysis.live_persons
-            in_count = [int64]$status.analysis.in_count
-            out_count = [int64]$status.analysis.out_count
+            confirmed_vehicles = [int]$status.analysis.results.confirmed_count
         }
         pipeline = [ordered]@{
             thread_running = [bool]$status.pipeline.thread_running

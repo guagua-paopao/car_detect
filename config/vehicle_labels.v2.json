@@ -1,0 +1,68 @@
+{
+  "schema_version": "2.0",
+  "labels_version": "vehicle-labels-v2-offline-candidate",
+  "deployment_status": "offline_candidate_only",
+  "vehicle_classes": [
+    "car",
+    "bus",
+    "truck",
+    "motorcycle",
+    "vehicle",
+    "other"
+  ],
+  "body_types": [
+    "sedan",
+    "suv",
+    "mpv",
+    "van",
+    "pickup",
+    "truck",
+    "bus",
+    "light_truck",
+    "heavy_truck",
+    "other",
+    "unknown"
+  ],
+  "colors": [
+    "black",
+    "white",
+    "gray",
+    "silver",
+    "red",
+    "blue",
+    "green",
+    "yellow",
+    "brown",
+    "other",
+    "unknown"
+  ],
+  "crop_qualities": [
+    "good",
+    "usable",
+    "poor"
+  ],
+  "viewpoints": [
+    "front",
+    "rear",
+    "side",
+    "front_three_quarter",
+    "rear_three_quarter",
+    "unknown"
+  ],
+  "normalization_aliases": {
+    "grey": "gray"
+  },
+  "unknown_policy": {
+    "vehicle_class_allows_unknown": false,
+    "body_type_allows_unknown": true,
+    "color_allows_unknown": true,
+    "poor_crop_must_not_force_attribute_label": true,
+    "merged_v1_colors_must_be_demoted_without_fine_grained_truth": true
+  },
+  "migration_policy": {
+    "production_contract_unchanged": true,
+    "requires_frontend_backend_contract_migration": true,
+    "requires_independent_v2_validation": true,
+    "generic_truck_requires_official_coarse_truck_truth": true
+  }
+}

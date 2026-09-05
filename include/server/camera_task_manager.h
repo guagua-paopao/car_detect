@@ -40,12 +40,8 @@ struct CameraTaskCommand {
     // deserialization of command_version 1/2 messages.
     std::string origin = "camera_api";
     std::string analysis_config_version;
-    long long initial_occupancy = 0;
     int snapshot_fps = 0;
     std::string algorithm_parameters_json = "{}";
-    std::string legacy_session_id;
-    bool preserve_pf_projection = false;
-    int legacy_response_version = 0;
 };
 
 class ICameraTaskCommandSource {

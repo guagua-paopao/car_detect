@@ -7,12 +7,13 @@
 
 #include "types.h"
 #include "perf_metrics.h"
+#include "server/vehicle_model_contract.h"
 
 namespace yolo11_server {
 
     // Phase 17: unified model output container.
     // Detect/OBB fill detections; CLS fills classifications.
-    // Pose/Seg can extend this container later without forcing every model
+    // Segmentation can extend this container without forcing every model
     // into std::vector<Detection>.
     struct ClassificationItem {
         int class_id = -1;
@@ -33,12 +34,19 @@ namespace yolo11_server {
         std::vector<Detection> detections;
         std::vector<ClassificationItem> classifications;
         std::vector<SegmentationItem> segmentations;
+        // Vehicle camera pipeline payload.  The generic Detection type cannot
+        // carry the detector artifact/labels contract needed by the attribute
+        // cascade, so keep the typed result intact across the inference pool.
+        bool has_vehicle_detection = false;
+        VehicleDetectionResult vehicle_detection;
 
         // Phase P0: split performance metrics. Filled by model API / worker when available.
         PerfMetrics perf;
 
         bool empty() const {
-            return detections.empty() && classifications.empty() && segmentations.empty();
+            return detections.empty() && classifications.empty() &&
+                segmentations.empty() &&
+                (!has_vehicle_detection || vehicle_detection.detections.empty());
         }
     };
 

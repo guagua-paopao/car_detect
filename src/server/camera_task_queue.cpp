@@ -227,14 +227,9 @@ bool CameraTaskQueue::fillCommand(void* opaque, CameraTaskCommand& command, std:
     command.origin = get("origin");
     if (command.origin.empty()) command.origin = "camera_api";
     command.analysis_config_version = get("analysis_config_version");
-    command.initial_occupancy = parseLongLong(get("initial_occupancy"));
     command.snapshot_fps = static_cast<int>(parseLongLong(get("snapshot_fps")));
     command.algorithm_parameters_json = get("algorithm_parameters_json");
     if (command.algorithm_parameters_json.empty()) command.algorithm_parameters_json = "{}";
-    command.legacy_session_id = get("legacy_session_id");
-    command.preserve_pf_projection = parseLongLong(get("preserve_pf_projection")) != 0;
-    command.legacy_response_version =
-        static_cast<int>(parseLongLong(get("legacy_response_version")));
     return !command.message_id.empty();
 }
 
@@ -321,8 +316,7 @@ void CameraTaskQueue::interrupt() noexcept {
 
 bool CameraTaskQueue::submitStart(const CameraTaskCommand& command, std::string& error) {
     if (!safeKeyPart(command.task_id) || !safeKeyPart(command.run_id) ||
-        !safeKeyPart(command.camera_profile) || !safeKeyPart(command.origin) ||
-        (!command.legacy_session_id.empty() && !safeKeyPart(command.legacy_session_id))) {
+        !safeKeyPart(command.camera_profile) || !safeKeyPart(command.origin)) {
         error = "camera command contains an unsafe identifier";
         return false;
     }
@@ -333,9 +327,8 @@ bool CameraTaskQueue::submitStart(const CameraTaskCommand& command, std::string&
         "definition_version %d camera_profile %s frame_interval_ms %d output_mode %s jpeg_quality %d "
         "max_width %d max_height %d retention_days %d max_saved_frames %d analysis_enabled %d "
         "target_infer_fps %.8g algorithm_profile %s algorithms_json %s callback_profile %s create_time_ms %lld "
-        "origin %s analysis_config_version %s initial_occupancy %lld snapshot_fps %d "
-        "algorithm_parameters_json %s legacy_session_id %s preserve_pf_projection %d "
-        "legacy_response_version %d",
+        "origin %s analysis_config_version %s snapshot_fps %d "
+        "algorithm_parameters_json %s",
         camera_config_.command_stream_key.c_str(), command.task_id.c_str(), command.run_id.c_str(),
         command.definition_version, command.camera_profile.c_str(), command.frame_interval_ms,
         command.output_mode.c_str(), command.jpeg_quality, command.max_width, command.max_height,
@@ -344,9 +337,7 @@ bool CameraTaskQueue::submitStart(const CameraTaskCommand& command, std::string&
         json(command.algorithms).dump().c_str(), command.callback_profile.c_str(),
         command.create_time_ms > 0 ? command.create_time_ms : nowMs(),
         command.origin.c_str(), command.analysis_config_version.c_str(),
-        command.initial_occupancy, command.snapshot_fps,
-        command.algorithm_parameters_json.c_str(), command.legacy_session_id.c_str(),
-        command.preserve_pf_projection ? 1 : 0, command.legacy_response_version)));
+        command.snapshot_fps, command.algorithm_parameters_json.c_str())));
     return !replyError(reply.get(), context_, error);
 }
 
@@ -586,17 +577,15 @@ bool CameraTaskQueue::updateAnalysisStatus(
     const std::string key = statusKey(status.run_id);
     ReplyPtr reply(static_cast<redisReply*>(redisCommand(context_,
         "HSET %s run_id %s task_id %s analysis_config_version %s infer_fps %.6f "
-        "last_inference_ms %.6f analysis_frame_count %lld initial_occupancy %lld "
-        "in_count %lld out_count %lld occupancy %lld live_persons %d "
-        "analysis_reconnect_count %d warmup_frames_remaining %d security_state_json %s "
+        "last_inference_ms %.6f analysis_frame_count %lld "
+        "analysis_reconnect_count %d warmup_frames_remaining %d analysis_state_json %s "
         "analysis_snapshot_relative_path %s analysis_storage_degraded %d "
         "analysis_snapshot_degraded %d analysis_last_update_ms %lld",
         key.c_str(), status.run_id.c_str(), status.task_id.c_str(),
         status.analysis_config_version.c_str(), status.infer_fps,
         status.last_inference_ms, status.analysis_frame_count,
-        status.initial_occupancy, status.in_count, status.out_count,
-        status.occupancy, status.live_persons, status.analysis_reconnect_count,
-        status.warmup_frames_remaining, status.security_state_json.c_str(),
+        status.analysis_reconnect_count, status.warmup_frames_remaining,
+        status.analysis_state_json.c_str(),
         status.analysis_snapshot_relative_path.c_str(),
         status.analysis_storage_degraded ? 1 : 0,
         status.analysis_snapshot_degraded ? 1 : 0,
@@ -652,17 +641,12 @@ bool CameraTaskQueue::getRunStatus(
     status.infer_fps = parseDouble(get("infer_fps"));
     status.last_inference_ms = parseDouble(get("last_inference_ms"));
     status.analysis_frame_count = parseLongLong(get("analysis_frame_count"));
-    status.initial_occupancy = parseLongLong(get("initial_occupancy"));
-    status.in_count = parseLongLong(get("in_count"));
-    status.out_count = parseLongLong(get("out_count"));
-    status.occupancy = parseLongLong(get("occupancy"));
-    status.live_persons = static_cast<int>(parseLongLong(get("live_persons")));
     status.analysis_reconnect_count =
         static_cast<int>(parseLongLong(get("analysis_reconnect_count")));
     status.warmup_frames_remaining =
         static_cast<int>(parseLongLong(get("warmup_frames_remaining")));
-    status.security_state_json = get("security_state_json");
-    if (status.security_state_json.empty()) status.security_state_json = "{}";
+    status.analysis_state_json = get("analysis_state_json");
+    if (status.analysis_state_json.empty()) status.analysis_state_json = "{}";
     status.analysis_snapshot_relative_path =
         get("analysis_snapshot_relative_path");
     status.analysis_storage_degraded =
@@ -679,8 +663,6 @@ bool CameraTaskQueue::updateHubStatus(const CameraHubStatus& status, std::string
     std::lock_guard<std::mutex> lock(mutex_);
     if (!context_ && !connectLocked(error)) return false;
     const std::string key = hubStatusKey(status.camera_profile);
-    const int people_flow_subscribers = status.subscriber_types.count("people_flow")
-        ? status.subscriber_types.at("people_flow") : 0;
     const int camera_task_subscribers = status.subscriber_types.count("camera_task")
         ? status.subscriber_types.at("camera_task") : 0;
     const int camera_pipeline_subscribers =
@@ -689,13 +671,13 @@ bool CameraTaskQueue::updateHubStatus(const CameraHubStatus& status, std::string
     const std::string clean_error = sanitizedCameraError(status.last_error);
     ReplyPtr reply(static_cast<redisReply*>(redisCommand(context_,
         "HSET %s camera_profile %s hub_instance_id %s state %s backend %s subscriber_count %d "
-        "people_flow_subscribers %d camera_task_subscribers %d camera_pipeline_subscribers %d "
+        "camera_task_subscribers %d camera_pipeline_subscribers %d "
         "open_count %lld reconnect_count %d "
         "capture_fps %.6f source_fps %.6f latest_frame_age_ms %lld latest_sequence %llu width %d height %d "
         "resolution_changed %d resolution_change_count %lld last_frame_time_ms %lld "
         "last_error %s last_update_ms %lld",
         key.c_str(), status.camera_profile.c_str(), status.hub_instance_id.c_str(), status.state.c_str(),
-        status.backend_name.c_str(), status.subscriber_count, people_flow_subscribers,
+        status.backend_name.c_str(), status.subscriber_count,
         camera_task_subscribers, camera_pipeline_subscribers,
         status.open_count, status.reconnect_count, status.capture_fps,
         status.source_fps, status.latest_frame_age_ms, status.latest_sequence, status.width, status.height,
@@ -731,8 +713,6 @@ bool CameraTaskQueue::getHubStatus(
     status.snapshot.state = get("state");
     status.snapshot.backend_name = get("backend");
     status.snapshot.subscriber_count = static_cast<int>(parseLongLong(get("subscriber_count")));
-    status.snapshot.subscriber_types["people_flow"] =
-        static_cast<int>(parseLongLong(get("people_flow_subscribers")));
     status.snapshot.subscriber_types["camera_task"] =
         static_cast<int>(parseLongLong(get("camera_task_subscribers")));
     status.snapshot.subscriber_types["camera_pipeline"] =

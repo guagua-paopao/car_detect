@@ -130,6 +130,40 @@ private:
     std::vector<std::string> detached_;
 };
 
+class BlockingHandler final : public ICameraInferenceResultHandler {
+public:
+    bool handle(const CameraInferenceResult&, std::string& error) override {
+        std::unique_lock<std::mutex> lock(mutex_);
+        ++started_;
+        cv_.notify_all();
+        cv_.wait(lock, [&]() { return released_; });
+        ++completed_;
+        error.clear();
+        return true;
+    }
+    void detachCamera(const std::string&, const std::string&) noexcept override {}
+    int started() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return started_;
+    }
+    int completed() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return completed_;
+    }
+    void release() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        released_ = true;
+        cv_.notify_all();
+    }
+
+private:
+    mutable std::mutex mutex_;
+    std::condition_variable cv_;
+    int started_ = 0;
+    int completed_ = 0;
+    bool released_ = false;
+};
+
 CameraFrameJob job(
     const std::string& task_id,
     const std::string& run_id,
@@ -146,7 +180,7 @@ CameraFrameJob job(
     value.source_sequence = sequence;
     value.capture_time_ms = frame->capture_time_ms;
     value.algorithm_profile = "test_profile";
-    value.algorithms = { "people_flow" };
+    value.algorithms = { "vehicle_detection" };
     value.frame = std::move(frame);
     return value;
 }
@@ -295,6 +329,45 @@ int main() {
     balanced_pool.stop();
     require(balanced_runner_state->released.load() == 2,
         "balanced pool shutdown must release both runners");
+
+    AppConfig overlap_config = config;
+    overlap_config.analysis.inference_workers = 1;
+    overlap_config.analysis.async_result_dispatch = true;
+    overlap_config.analysis.result_queue_capacity = 2;
+    auto overlap_runner_state = std::make_shared<RunnerState>();
+    auto blocking_handler = std::make_shared<BlockingHandler>();
+    CameraInferencePool overlap_pool(
+        overlap_config,
+        [overlap_runner_state](int) {
+            return std::make_unique<FakeRunner>(overlap_runner_state);
+        },
+        blocking_handler);
+    require(overlap_pool.start(error),
+        "cross-frame overlap pool must start: " + error);
+    require(overlap_pool.submitLatest(
+            job("camera_overlap", "run_overlap", 1), submit, error),
+        "first overlap frame must be accepted");
+    require(waitUntil([&]() { return blocking_handler->started() == 1; }),
+        "first frame result handling must become in-flight");
+    require(overlap_pool.submitLatest(
+            job("camera_overlap", "run_overlap", 2), submit, error),
+        "second overlap frame must be accepted");
+    require(waitUntil([&]() {
+        return overlap_runner_state->inferred.load() >= 2 &&
+            blocking_handler->completed() == 0;
+    }),
+        "frame N+1 inference must overlap blocked frame N result handling");
+    blocking_handler->release();
+    require(waitUntil([&]() {
+        return blocking_handler->completed() == 2 &&
+            overlap_pool.snapshot().handled_result_jobs == 2;
+    }), "both overlapped results must complete in order");
+    const auto overlap_snapshot = overlap_pool.snapshot();
+    require(overlap_snapshot.maximum_pending_result_jobs <= 2 &&
+            overlap_snapshot.failed_jobs == 0 &&
+            overlap_snapshot.stale_results == 0,
+        "cross-frame result queue must remain bounded and correct");
+    overlap_pool.stop();
 
     auto failed_runner_state = std::make_shared<RunnerState>();
     auto failed_handler = std::make_shared<RecordingHandler>();

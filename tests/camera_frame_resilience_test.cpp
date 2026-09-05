@@ -120,7 +120,7 @@ private:
 int main() {
     using namespace yolo11_server;
 
-    // AC-01/02/03/13: one People Flow subscriber and three extraction tasks
+    // AC-01/02/03/13: one observer and three extraction tasks
     // share one source object through disconnect/recovery and a resolution change.
     CameraHubSection single_config;
     single_config.max_active_hubs = 1;
@@ -135,19 +135,19 @@ int main() {
 
     std::vector<std::shared_ptr<FrameSubscription>> shared(4);
     std::string error;
-    require(registry.subscribe("entry_camera_01", {"pf", "people_flow"}, shared[0], error),
-        "People Flow subscription must start the shared source");
+    require(registry.subscribe("entry_camera_01", {"observer", "observer"}, shared[0], error),
+        "observer subscription must start the shared source");
     for (int index = 1; index < 4; ++index) {
         require(registry.subscribe("entry_camera_01",
             {"camera_run_" + std::to_string(index), "camera_task"}, shared[index], error),
-            "three camera tasks must share the People Flow source");
+            "three camera tasks must share the observer source");
     }
     auto status = shared.front()->hubStatus();
     require(source_factory_calls.load() == 1 && source_state->starts.load() == 1 &&
         status.open_count == 1, "stable same-profile operation must have one source open");
-    require(status.subscriber_count == 4 && status.subscriber_types["people_flow"] == 1 &&
+    require(status.subscriber_count == 4 && status.subscriber_types["observer"] == 1 &&
         status.subscriber_types["camera_task"] == 3,
-        "Hub diagnostics must report one People Flow and three Camera Task subscribers");
+        "Hub diagnostics must report one observer and three Camera Task subscribers");
 
     source_state->publish(1, 320, 240);
     SharedCameraFrame shared_envelope;
@@ -188,7 +188,7 @@ int main() {
     shared[1].reset();
     require(source_state->active.load(), "stopping one Camera Task must not stop the Hub");
     shared[0].reset();
-    require(source_state->active.load(), "stopping People Flow must preserve remaining Camera Tasks");
+    require(source_state->active.load(), "stopping observer must preserve remaining Camera Tasks");
     shared[2].reset();
     require(source_state->active.load(), "the penultimate subscriber must preserve the source");
     shared[3].reset();
@@ -217,7 +217,7 @@ int main() {
             std::shared_ptr<FrameSubscription> subscription;
             require(multi_registry.subscribe(profile,
                 {profile + "_consumer_" + std::to_string(consumer),
-                    consumer == 0 ? "people_flow" : "camera_task"}, subscription, error),
+                    consumer == 0 ? "observer" : "camera_task"}, subscription, error),
                 "four-profile capacity test subscription must succeed");
             multi_subscriptions.push_back(std::move(subscription));
         }

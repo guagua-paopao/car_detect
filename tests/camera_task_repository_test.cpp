@@ -60,8 +60,8 @@ CameraTaskDefinition taskDefinition(const std::string& id, long long now) {
     task.desired_state = "running";
     task.analysis_enabled = true;
     task.target_infer_fps = 6.5;
-    task.algorithm_profile = "security_default";
-    task.algorithms = { "people_flow", "ppe_detection" };
+    task.algorithm_profile = "vehicle_default";
+    task.algorithms = { "vehicle_detection", "vehicle_attribute" };
     task.callback_profile = "backend_primary";
     task.version = 1;
     task.created_at_ms = now;
@@ -101,7 +101,7 @@ int main() {
         "test PostgreSQL schema reset must succeed: " + error);
 
     // Exercise the documented 001 -> 002 -> 003 upgrade path before testing a
-    // clean database. The legacy row must survive and receive additive defaults.
+    // clean database. The existing row must survive additive vehicle metadata.
     require(database.exec(sourceFile("db/postgresql/001_initial_schema.sql"), error),
         "001 migration must apply: " + error);
     require(database.exec(sourceFile("db/postgresql/002_algorithm_service_contract.sql"), error),
@@ -112,30 +112,30 @@ int main() {
         "max_width,max_height,retention_days,max_saved_frames,desired_state,"
         "analysis_enabled,target_infer_fps,algorithm_profile,algorithms_json,"
         "callback_profile,version,created_at_ms,updated_at_ms) VALUES("
-        "'ct_legacy','Legacy camera','entry_camera_01',1,1000,'latest',90,"
+        "'ct_existing','Existing camera','entry_camera_01',1,1000,'latest',90,"
         "0,0,7,1000,'running',0,5,'','[]'::jsonb,'',1,1,1);"
         "INSERT INTO camera_task_runs("
         "run_id,task_id,definition_version,definition_json,status,camera_profile,"
         "create_time_ms,last_update_ms) VALUES("
-        "'cr_legacy','ct_legacy',1,'{}','stopped','entry_camera_01',1,1);",
-        error), "legacy 002 rows must be created: " + error);
+        "'cr_existing','ct_existing',1,'{}','stopped','entry_camera_01',1,1);",
+        error), "existing 002 rows must be created: " + error);
     CameraTaskRepository repository(config);
     std::string code;
     require(repository.initialize(error), "003 repository upgrade must succeed: " + error);
     auto migrated = database.prepare(
-        "SELECT origin,legacy_session_id,analysis_config_version "
-        "FROM camera_task_runs WHERE run_id='cr_legacy';", error);
+        "SELECT origin,analysis_config_version "
+        "FROM camera_task_runs WHERE run_id='cr_existing';", error);
     require(migrated != nullptr && migrated->step() == PG_STEP_ROW &&
             migrated->columnText(0) == "camera_api" &&
-            migrated->columnIsNull(1) && migrated->columnIsNull(2),
-        "002 Run must survive 003 with rollback-safe defaults");
+            migrated->columnIsNull(1),
+        "002 Run must survive 003 with safe defaults");
     auto version = database.prepare(
         "SELECT COUNT(*) FROM camera_schema_version WHERE version=3;", error);
     require(version != nullptr && version->step() == PG_STEP_ROW &&
             version->columnInt64(0) == 1,
         "003 schema version must be recorded exactly once");
     require(database.exec(
-            sourceFile("db/postgresql/003_people_flow_camera_unification.sql"), error) &&
+            sourceFile("db/postgresql/003_vehicle_analysis_state.sql"), error) &&
             repository.initialize(error),
         "003 migration and repository initialization must be idempotent: " + error);
 
@@ -152,8 +152,9 @@ int main() {
     require(loaded.version == 1 && loaded.output_mode == "both" &&
             loaded.desired_state == "running" && loaded.analysis_enabled &&
             loaded.target_infer_fps == 6.5 &&
-            loaded.algorithm_profile == "security_default" &&
-            loaded.algorithms == std::vector<std::string>({ "people_flow", "ppe_detection" }) &&
+            loaded.algorithm_profile == "vehicle_default" &&
+            loaded.algorithms == std::vector<std::string>({
+                "vehicle_detection", "vehicle_attribute" }) &&
             loaded.callback_profile == "backend_primary",
         "created task and algorithm contract fields must persist");
 
@@ -168,24 +169,19 @@ int main() {
         "update must increment version and persist patch");
 
     CameraTaskRunRecord run = runRecord("cr_alpha_1", updated, stamp + 3);
-    run.analysis_config_version = "entry-line-v3";
+    run.analysis_config_version = "vehicle-v1";
     require(repository.createRun(run, code, error), "first active run must be created: " + error);
     CameraTaskRunRecord loaded_run;
     require(repository.getRun(run.run_id, loaded_run, found, error) && found &&
             loaded_run.origin == "camera_api" &&
-            loaded_run.analysis_config_version == "entry-line-v3" &&
-            loaded_run.legacy_session_id.empty(),
-        "additive Run unification metadata must persist");
+            loaded_run.analysis_config_version == "vehicle-v1",
+        "vehicle Run metadata must persist");
 
     CameraRunAnalysisResultRecord analysis_result;
     analysis_result.run_id = run.run_id;
     analysis_result.task_id = run.task_id;
-    analysis_result.initial_occupancy = 4;
-    analysis_result.in_count = 3;
-    analysis_result.out_count = 1;
-    analysis_result.final_occupancy = 6;
-    analysis_result.last_live_persons = 2;
-    analysis_result.security_state_json = R"({"phase1":"safe"})";
+    analysis_result.analysis_state_json =
+        R"({"mode":"vehicle_cascade","confirmed_count":2})";
     analysis_result.snapshot_relative_path = "ct_alpha/latest/analysis.jpg";
     analysis_result.storage_degraded = true;
     analysis_result.last_update_ms = stamp + 3;
@@ -194,10 +190,9 @@ int main() {
     CameraRunAnalysisResultRecord loaded_analysis;
     require(repository.getRunAnalysisResult(
             run.run_id, loaded_analysis, found, error) && found &&
-            loaded_analysis.initial_occupancy == 4 &&
-            loaded_analysis.final_occupancy == 6 &&
             loaded_analysis.storage_degraded &&
-            nlohmann::json::parse(loaded_analysis.security_state_json)["phase1"] == "safe",
+            nlohmann::json::parse(loaded_analysis.analysis_state_json)
+                ["confirmed_count"] == 2,
         "analysis result must round-trip without changing Camera runtime behavior");
     CameraTaskRunRecord duplicate = runRecord("cr_alpha_2", updated, stamp + 4);
     require(!repository.createRun(duplicate, code, error) && code == "ACTIVE_RUN_EXISTS",

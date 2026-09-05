@@ -191,17 +191,43 @@ def validate_manifest(manifest: dict[str, Any], labels: dict[str, Any]) -> list[
             errors.append(f"{prefix}.annotations must be an object")
             continue
         detection = annotations.get("detection")
+        detections = annotations.get("detections")
         attributes = annotations.get("attributes")
-        if task in {"detection", "multitask"} and not isinstance(detection, dict):
+        normalized_detections: list[object] = []
+        if detection is not None:
+            if isinstance(detection, dict):
+                normalized_detections.append(detection)
+            else:
+                errors.append(f"{prefix}.annotations.detection must be an object")
+        if detections is not None:
+            if isinstance(detections, list) and detections:
+                normalized_detections.extend(detections)
+            else:
+                errors.append(
+                    f"{prefix}.annotations.detections must be a non-empty array"
+                )
+        if detection is not None and detections is not None:
+            errors.append(
+                f"{prefix}.annotations must use detection or detections, not both"
+            )
+        if task in {"detection", "multitask"} and not normalized_detections:
             errors.append(f"{prefix} task {task!r} requires detection annotations")
         if task in {"attributes", "multitask"} and not isinstance(attributes, dict):
             errors.append(f"{prefix} task {task!r} requires attribute annotations")
 
-        if isinstance(detection, dict):
-            if not _validate_bbox(detection.get("bbox_xyxy_norm")):
-                errors.append(f"{prefix}.annotations.detection bbox is invalid")
-            if detection.get("vehicle_class") not in vehicle_classes:
-                errors.append(f"{prefix}.annotations.detection vehicle_class is invalid")
+        for detection_index, detection_item in enumerate(normalized_detections):
+            detection_prefix = (
+                f"{prefix}.annotations.detection"
+                if detections is None
+                else f"{prefix}.annotations.detections[{detection_index}]"
+            )
+            if not isinstance(detection_item, dict):
+                errors.append(f"{detection_prefix} must be an object")
+                continue
+            if not _validate_bbox(detection_item.get("bbox_xyxy_norm")):
+                errors.append(f"{detection_prefix} bbox is invalid")
+            if detection_item.get("vehicle_class") not in vehicle_classes:
+                errors.append(f"{detection_prefix} vehicle_class is invalid")
 
         if isinstance(attributes, dict):
             if attributes.get("body_type") not in body_types:

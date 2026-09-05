@@ -1,0 +1,102 @@
+{
+  "schema_version": "1.0",
+  "registry_version": "vehicle-model-registry-v2-domain-bmd45-agent-candidate",
+  "labels_version": "vehicle-labels-v1",
+  "created_at": "2026-08-23T17:00:00Z",
+  "target": {
+    "os": "windows",
+    "backend": "tensorrt",
+    "engine_portability": "target_host_only"
+  },
+  "artifacts": [
+    {
+      "artifact_id": "vehicle-det-v1",
+      "role": "detection",
+      "delivery_status": "deployed",
+      "architecture": "YOLO11s Detect",
+      "labels_version": "vehicle-labels-v1",
+      "input": {
+        "width": 960,
+        "height": 960,
+        "channels": 3,
+        "layout": "NCHW",
+        "color_order": "RGB",
+        "dtype": "float32"
+      },
+      "output_names": [
+        "vehicle_detections"
+      ],
+      "deployment": {
+        "backend": "tensorrt",
+        "precision": "fp16",
+        "max_batch": 1,
+        "target_os": "windows"
+      },
+      "files": {
+        "onnx_path": "models/vehicle-det-v1.onnx",
+        "engine_path": "engines/vehicle-det-v1.engine",
+        "onnx_sha256": "a2655b27c9c1905f1ffbc3e16cb08e9800cca549d74cecc01d1b0bf47c504b93",
+        "engine_sha256": "bdba13a99bea49c1bac448665fa102572bddf791a51c929b642020f586d53fb8"
+      },
+      "provenance": {
+        "dataset_version": "dataset-domain-bmd45-v1",
+        "training_run_id": "DET-DOMAIN-BMD45-FINETUNE-R1",
+        "code_commit": "0cbeb958857c2c8bddfd6b245a205c61b66e14fd",
+        "model_card_path": "models/evidence/vehicle-det-model-card.json",
+        "metrics_path": "models/evidence/vehicle-det-metrics.json"
+      }
+    },
+    {
+      "artifact_id": "vehicle-attr-agent-e-224",
+      "role": "attributes",
+      "delivery_status": "engine_validated",
+      "architecture": "MobileNetV3-Large multitask + teacher distillation",
+      "labels_version": "vehicle-labels-v1",
+      "input": {
+        "width": 224,
+        "height": 224,
+        "channels": 3,
+        "layout": "NCHW",
+        "color_order": "RGB",
+        "dtype": "float32"
+      },
+      "output_names": [
+        "body_type",
+        "color"
+      ],
+      "deployment": {
+        "backend": "tensorrt",
+        "precision": "fp16",
+        "max_batch": 16,
+        "target_os": "windows"
+      },
+      "files": {
+        "onnx_path": "models/candidates/vehicle-attr-agent-e-224/vehicle-attr-agent-e-224-calibrated.onnx",
+        "engine_path": "models/candidates/vehicle-attr-agent-e-224/vehicle-attr-agent-e-224-calibrated.engine",
+        "onnx_sha256": "874267440af4fb5512eaa137eeead883d28b9877bdaab635ed5f2f8085a091a9",
+        "engine_sha256": "f21642d91dc9bc458e8a26d064e2140a5c3368c7311f2b7accb12e2f6e3b52b4"
+      },
+      "provenance": {
+        "dataset_version": "attribute-domain-v2-formal-agent-candidate",
+        "training_run_id": "ATTR-AGENT-E-DISTILL-MNV3-224",
+        "code_commit": "0cbeb958857c2c8bddfd6b245a205c61b66e14fd",
+        "model_card_path": "models/candidates/vehicle-attr-agent-e-224/model_card.json",
+        "metrics_path": "models/candidates/vehicle-attr-agent-e-224/onnx-parity.json",
+        "calibration_path": "models/candidates/vehicle-attr-agent-e-224/calibration-v2.json",
+        "parity_path": "models/candidates/vehicle-attr-agent-e-224/onnx-parity.json",
+        "track_report_path": "models/candidates/vehicle-attr-agent-e-224/track-fused-report.json"
+      },
+      "gates": {
+        "independent_validation_test_calibration": "pass",
+        "onnx_top1_parity": "pass",
+        "tensorrt_deserialize_smoke": "pass",
+        "track_stability_rate": 0.9878644368802723
+      }
+    }
+  ],
+  "candidate_policy": {
+    "production_registry_overwritten": false,
+    "rollback_required_before_deploy": true,
+    "candidate_only_until_cxx_smoke_and_runtime_replay": true
+  }
+}

@@ -115,7 +115,7 @@ int main() {
         threads.emplace_back([&, index]() {
             std::string error;
             if (registry.subscribe("entry_camera_01",
-                    {"subscriber_" + std::to_string(index), index == 0 ? "people_flow" : "camera_task"},
+                    {"subscriber_" + std::to_string(index), index == 0 ? "observer" : "camera_task"},
                     subscriptions[index], error)) {
                 ++subscribed;
             }
@@ -145,8 +145,8 @@ int main() {
 
     const auto hub_status = subscriptions[0]->hubStatus();
     require(hub_status.subscriber_count == 10, "hub must expose all subscribers");
-    require(hub_status.subscriber_types.at("people_flow") == 1,
-        "hub must count people-flow subscribers");
+    require(hub_status.subscriber_types.at("observer") == 1,
+        "hub must count observer subscribers");
     require(hub_status.subscriber_types.at("camera_task") == 9,
         "hub must count camera-task subscribers");
     require(hub_status.open_count == 1, "hub open count must remain one");

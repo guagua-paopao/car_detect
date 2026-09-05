@@ -22,7 +22,14 @@ def main() -> None:
             encoding="utf-8"
         )
     )
-    issues = audit(registry, ROOT)
+    planned_registry = copy.deepcopy(registry)
+    planned_artifact = planned_registry["artifacts"][0]
+    planned_artifact["delivery_status"] = "planned"
+    planned_artifact["files"]["onnx_path"] = "models/contract-missing.onnx"
+    planned_artifact["files"]["engine_path"] = "engines/contract-missing.engine"
+    planned_artifact["files"]["onnx_sha256"] = None
+    planned_artifact["files"]["engine_sha256"] = None
+    issues = audit(planned_registry, ROOT)
     if not any("missing onnx file" in issue for issue in issues):
         raise AssertionError("planned registry must report missing ONNX payloads")
     if not any("missing engine file" in issue for issue in issues):

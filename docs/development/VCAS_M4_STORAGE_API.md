@@ -70,7 +70,7 @@
 
 ## 已知限制
 
-- 实时 API 需要 Worker 将 `VehicleRealtimeSnapshotReader` 接入运行中的 `VehicleCascadeRuntime`；未接入时明确返回 `available=false`。
+- 实时 API 由 HTTP Server 从活动 Camera Run 的 `security_state_json` 读取 `vehicle_cascade` 热状态并映射为 `VehicleRealtimeSnapshotReader` 契约；没有可用车辆热状态时明确返回 `available=false`。
 - 模型状态接口只报告 Registry 声明，不替代 TensorRT Adapter 的 SHA256 加载门禁。
 - 快照生成由运行时负责；M4 只持久化相对路径并安全提供已有 JPEG。
 - 本阶段不替换既有人物/Pose 演示处理链路。

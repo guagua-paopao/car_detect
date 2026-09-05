@@ -101,11 +101,10 @@ try {
         analysis = @{
             enabled = $true
             target_infer_fps = 5.0
-            algorithm_profile = "security_default"
+            algorithm_profile = "vehicle_default"
             algorithms = @(
-                "people_flow",
-                "electronic_fence",
-                "pose_action"
+                "vehicle_detection",
+                "vehicle_attribute"
             )
         }
         callback_profile = $CallbackProfile

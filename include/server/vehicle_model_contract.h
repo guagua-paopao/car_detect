@@ -75,6 +75,50 @@ struct ImageView {
     bool valid() const noexcept;
 };
 
+struct I420ImageView {
+    const std::uint8_t* y_plane = nullptr;
+    const std::uint8_t* u_plane = nullptr;
+    const std::uint8_t* v_plane = nullptr;
+    int width = 0;
+    int height = 0;
+    std::size_t y_stride_bytes = 0;
+    std::size_t u_stride_bytes = 0;
+    std::size_t v_stride_bytes = 0;
+
+    bool valid() const noexcept;
+};
+
+struct OwnedI420Image {
+    std::shared_ptr<const std::vector<std::uint8_t>> bytes;
+    int width = 0;
+    int height = 0;
+    std::size_t y_offset = 0;
+    std::size_t u_offset = 0;
+    std::size_t v_offset = 0;
+    std::size_t y_stride_bytes = 0;
+    std::size_t u_stride_bytes = 0;
+    std::size_t v_stride_bytes = 0;
+
+    bool valid() const noexcept;
+    I420ImageView view() const noexcept;
+};
+
+// CUDA-resident I420 planes retained by a bounded producer-owned lease.  The
+// pointers are device addresses and must never be dereferenced by host code.
+struct DeviceI420Image {
+    const std::uint8_t* y_plane = nullptr;
+    const std::uint8_t* u_plane = nullptr;
+    const std::uint8_t* v_plane = nullptr;
+    int width = 0;
+    int height = 0;
+    std::size_t y_stride_bytes = 0;
+    std::size_t u_stride_bytes = 0;
+    std::size_t v_stride_bytes = 0;
+    std::shared_ptr<void> lease;
+
+    bool valid() const noexcept;
+};
+
 struct OwnedImage {
     std::vector<std::uint8_t> pixels;
     int width = 0;
@@ -111,6 +155,7 @@ struct ModelResultMetadata {
 
 struct VehicleDetectionRequest {
     ImageView frame;
+    I420ImageView i420_frame;
     std::string camera_id;
     std::string run_id;
     std::uint64_t run_generation = 0;
@@ -125,10 +170,14 @@ struct VehicleDetectionResult {
     std::int64_t frame_sequence = 0;
     std::int64_t captured_at_ms = 0;
     std::vector<VehicleDetection> detections;
+    std::shared_ptr<const DeviceI420Image> device_i420_frame;
 };
 
 struct VehicleAttributeCrop {
     std::shared_ptr<const OwnedImage> crop;
+    std::shared_ptr<const OwnedI420Image> i420_frame;
+    std::shared_ptr<const DeviceI420Image> device_i420_frame;
+    VehicleBox source_box;
     std::string camera_id;
     std::string run_id;
     std::uint64_t run_generation = 0;

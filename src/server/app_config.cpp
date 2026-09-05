@@ -30,53 +30,29 @@ namespace yolo11_server {
         }
 
         std::string inferWorkerKind(const AppConfig& config) {
-            if (config.people_flow.enabled && config.camera_tasks.enabled) {
-                return "vision_host";
-            }
-            if (config.people_flow.enabled) {
-                return "people_flow";
-            }
-            if (config.stream.enabled) {
-                return "stream";
-            }
-            if (config.video.enabled) {
-                return "video";
-            }
+            if (config.camera_tasks.enabled) return "vision_host";
+            if (config.stream.enabled) return "stream";
+            if (config.video.enabled) return "video";
             return "image";
         }
 
         std::string inferTaskKind(const AppConfig& config) {
-            if (config.people_flow.enabled && config.camera_tasks.enabled) {
-                return "people_flow,camera_frame";
-            }
-            if (config.people_flow.enabled) {
-                return "live_people_flow";
-            }
-            if (config.stream.enabled) {
-                return "live_stream";
-            }
-            if (config.video.enabled) {
-                return "video_file";
-            }
+            if (config.camera_tasks.enabled) return "camera_pipeline";
+            if (config.stream.enabled) return "live_stream";
+            if (config.video.enabled) return "video_file";
             return "image_async";
         }
 
         std::string inferStreamType(const AppConfig& config) {
-            return (config.stream.enabled || config.people_flow.enabled || config.camera_tasks.enabled)
+            return (config.stream.enabled || config.camera_tasks.enabled)
                 ? std::string("long_running_stream")
                 : std::string("redis_stream");
         }
 
         std::string inferProfileType(const AppConfig& config) {
-            if (config.people_flow.enabled) {
-                return "people_flow";
-            }
-            if (config.stream.enabled) {
-                return "stream";
-            }
-            if (config.video.enabled) {
-                return "video";
-            }
+            if (config.camera_tasks.enabled && config.vehicle_analytics.enabled) return "vehicle";
+            if (config.stream.enabled) return "stream";
+            if (config.video.enabled) return "video";
             return toLowerString(config.model.type.empty() ? std::string("detect") : config.model.type);
         }
 
@@ -100,30 +76,12 @@ namespace yolo11_server {
                 config.worker.worker_group = inferWorkerGroup(config);
             }
             if (config.worker.max_concurrency <= 0) {
-                config.worker.max_concurrency = (config.stream.enabled || config.people_flow.enabled)
+                config.worker.max_concurrency = (config.stream.enabled || config.camera_tasks.enabled)
                     ? 1
                     : config.worker.worker_num;
             }
         }
 
-        bool readNormalizedPoint(const YAML::Node& node, NormalizedPoint& point) {
-            if (!node || !node.IsSequence() || node.size() != 2) {
-                return false;
-            }
-            try {
-                const double x = node[0].as<double>();
-                const double y = node[1].as<double>();
-                if (!std::isfinite(x) || !std::isfinite(y) || x < 0.0 || x > 1.0 || y < 0.0 || y > 1.0) {
-                    return false;
-                }
-                point.x = x;
-                point.y = y;
-                return true;
-            }
-            catch (...) {
-                return false;
-            }
-        }
 
         bool validServiceIdentifier(const std::string& value, std::size_t maximum = 160) {
             if (value.empty() || value.size() > maximum) return false;
@@ -443,12 +401,20 @@ namespace yolo11_server {
             analysis, "inference_workers", config.analysis.inference_workers);
         config.analysis.model_init_timeout_ms = readOrDefault<int>(
             analysis, "model_init_timeout_ms", config.analysis.model_init_timeout_ms);
+        config.analysis.async_result_dispatch = readOrDefault<bool>(
+            analysis, "async_result_dispatch",
+            config.analysis.async_result_dispatch);
+        config.analysis.result_queue_capacity = readOrDefault<int>(
+            analysis, "result_queue_capacity",
+            config.analysis.result_queue_capacity);
         config.analysis.supported_algorithms = readOrDefault<std::vector<std::string>>(
             analysis, "supported_algorithms", config.analysis.supported_algorithms);
         config.analysis.inference_workers = std::clamp(
             config.analysis.inference_workers, 1, 16);
         config.analysis.model_init_timeout_ms = std::clamp(
             config.analysis.model_init_timeout_ms, 1000, 600000);
+        config.analysis.result_queue_capacity = std::clamp(
+            config.analysis.result_queue_capacity, 1, 8);
         std::sort(
             config.analysis.supported_algorithms.begin(),
             config.analysis.supported_algorithms.end());
@@ -476,19 +442,48 @@ namespace yolo11_server {
                     config.vehicle_analytics.observation_retention_days),
                 1,
                 365);
+        config.vehicle_analytics.snapshot_fps = std::clamp(
+            readOrDefault<int>(
+                vehicle_analytics, "snapshot_fps",
+                config.vehicle_analytics.snapshot_fps),
+            1,
+            60);
+        config.vehicle_analytics.jpeg_quality = std::clamp(
+            readOrDefault<int>(
+                vehicle_analytics, "jpeg_quality",
+                config.vehicle_analytics.jpeg_quality),
+            1,
+            100);
+        config.vehicle_analytics.attribute_contexts = std::clamp(
+            readOrDefault<int>(
+                vehicle_analytics,
+                "attribute_contexts",
+                config.vehicle_analytics.attribute_contexts),
+            1,
+            4);
+        config.vehicle_analytics.dynamic_batching = readOrDefault<bool>(
+            vehicle_analytics,
+            "dynamic_batching",
+            config.vehicle_analytics.dynamic_batching);
+        config.vehicle_analytics.async_snapshots = readOrDefault<bool>(
+            vehicle_analytics,
+            "async_snapshots",
+            config.vehicle_analytics.async_snapshots);
+        config.vehicle_analytics.snapshot_writer_threads = std::clamp(
+            readOrDefault<int>(
+                vehicle_analytics,
+                "snapshot_writer_threads",
+                config.vehicle_analytics.snapshot_writer_threads),
+            1,
+            4);
+        config.vehicle_analytics.snapshot_queue_capacity = std::clamp(
+            readOrDefault<int>(
+                vehicle_analytics,
+                "snapshot_queue_capacity",
+                config.vehicle_analytics.snapshot_queue_capacity),
+            1,
+            64);
 
-        const auto runtime = root["runtime"];
-        config.runtime.unified_camera_pipeline = readOrDefault<bool>(
-            runtime, "unified_camera_pipeline",
-            config.runtime.unified_camera_pipeline);
-        config.runtime.people_flow_compatibility = readOrDefault<bool>(
-            runtime, "people_flow_compatibility",
-            config.runtime.people_flow_compatibility);
-        config.runtime.legacy_people_flow_fallback = readOrDefault<bool>(
-            runtime, "legacy_people_flow_fallback",
-            config.runtime.legacy_people_flow_fallback);
-        config.runtime.shadow_compare = readOrDefault<bool>(
-            runtime, "shadow_compare", config.runtime.shadow_compare);
 
         const auto callbacks = root["callbacks"];
         config.callbacks.enabled = readOrDefault<bool>(
@@ -637,321 +632,6 @@ namespace yolo11_server {
             config.camera_tasks.config_error = "camera_hub requires FFmpeg but capture fallback is enabled";
         }
 
-        auto people_flow = root["people_flow"];
-        config.people_flow.enabled = readOrDefault<bool>(people_flow, "enabled", config.people_flow.enabled);
-        config.people_flow.camera_id = readOrDefault<std::string>(people_flow, "camera_id", config.people_flow.camera_id);
-        config.people_flow.camera_profile = readOrDefault<std::string>(people_flow, "camera_profile", config.people_flow.camera_profile);
-        config.people_flow.config_version = readOrDefault<std::string>(people_flow, "config_version", config.people_flow.config_version);
-        config.people_flow.output_dir = readOrDefault<std::string>(people_flow, "output_dir", config.people_flow.output_dir);
-        config.people_flow.report_dir = readOrDefault<std::string>(people_flow, "report_dir", config.people_flow.report_dir);
-        config.people_flow.target_infer_fps = readOrDefault<int>(people_flow, "target_infer_fps", config.people_flow.target_infer_fps);
-        config.people_flow.snapshot_fps = readOrDefault<int>(people_flow, "snapshot_fps", config.people_flow.snapshot_fps);
-        config.people_flow.jpeg_quality = readOrDefault<int>(people_flow, "jpeg_quality", config.people_flow.jpeg_quality);
-        config.people_flow.initial_occupancy = readOrDefault<int>(people_flow, "initial_occupancy", config.people_flow.initial_occupancy);
-        config.people_flow.warmup_frames_after_reconnect = readOrDefault<int>(people_flow, "warmup_frames_after_reconnect", config.people_flow.warmup_frames_after_reconnect);
-        config.people_flow.active_ttl_seconds = readOrDefault<int>(people_flow, "active_ttl_seconds", config.people_flow.active_ttl_seconds);
-        config.people_flow.realtime_ttl_seconds = readOrDefault<int>(people_flow, "realtime_ttl_seconds", config.people_flow.realtime_ttl_seconds);
-        config.people_flow.session_ttl_seconds = readOrDefault<int>(people_flow, "session_ttl_seconds", config.people_flow.session_ttl_seconds);
-        config.people_flow.stale_timeout_ms = readOrDefault<int>(people_flow, "stale_timeout_ms", config.people_flow.stale_timeout_ms);
-        config.people_flow.admin_token_env = readOrDefault<std::string>(people_flow, "admin_token_env", config.people_flow.admin_token_env);
-
-        const auto person = people_flow["person"];
-        config.people_flow.person.class_id = readOrDefault<int>(person, "class_id", config.people_flow.person.class_id);
-        config.people_flow.person.conf_high = readOrDefault<double>(person, "conf_high", config.people_flow.person.conf_high);
-        config.people_flow.person.conf_low = readOrDefault<double>(person, "conf_low", config.people_flow.person.conf_low);
-        config.people_flow.person.min_width_px = readOrDefault<int>(person, "min_width_px", config.people_flow.person.min_width_px);
-        config.people_flow.person.min_height_px = readOrDefault<int>(person, "min_height_px", config.people_flow.person.min_height_px);
-        config.people_flow.person.max_aspect_ratio = readOrDefault<double>(person, "max_aspect_ratio", config.people_flow.person.max_aspect_ratio);
-        config.people_flow.person.anchor_point = toLowerString(readOrDefault<std::string>(person, "anchor_point", config.people_flow.person.anchor_point));
-
-        const auto tracker = people_flow["tracker"];
-        config.people_flow.tracker.min_hits = readOrDefault<int>(tracker, "min_hits", config.people_flow.tracker.min_hits);
-        config.people_flow.tracker.max_age_frames = readOrDefault<int>(tracker, "max_age_frames", config.people_flow.tracker.max_age_frames);
-        config.people_flow.tracker.match_iou_threshold = readOrDefault<double>(tracker, "match_iou_threshold", config.people_flow.tracker.match_iou_threshold);
-        config.people_flow.tracker.center_distance_gate_norm = readOrDefault<double>(tracker, "center_distance_gate_norm", config.people_flow.tracker.center_distance_gate_norm);
-        config.people_flow.tracker.velocity_smoothing = readOrDefault<double>(tracker, "velocity_smoothing", config.people_flow.tracker.velocity_smoothing);
-        config.people_flow.tracker.trail_length = readOrDefault<int>(tracker, "trail_length", config.people_flow.tracker.trail_length);
-        config.people_flow.tracker.use_alpha_beta_filter = readOrDefault<bool>(tracker, "use_alpha_beta_filter", config.people_flow.tracker.use_alpha_beta_filter);
-        config.people_flow.tracker.motion_alpha = readOrDefault<double>(tracker, "motion_alpha", config.people_flow.tracker.motion_alpha);
-        config.people_flow.tracker.motion_beta = readOrDefault<double>(tracker, "motion_beta", config.people_flow.tracker.motion_beta);
-        config.people_flow.tracker.max_prediction_ms = readOrDefault<int>(tracker, "max_prediction_ms", config.people_flow.tracker.max_prediction_ms);
-
-        const auto security = people_flow["security"];
-        auto& security_config = config.people_flow.security;
-        security_config.enabled = readOrDefault<bool>(security, "enabled", security_config.enabled);
-        security_config.mode = toLowerString(readOrDefault<std::string>(security, "mode", security_config.mode));
-        security_config.draw_zones = readOrDefault<bool>(security, "draw_zones", security_config.draw_zones);
-        security_config.draw_pose = readOrDefault<bool>(security, "draw_pose", security_config.draw_pose);
-        security_config.draw_stage_panel = readOrDefault<bool>(security, "draw_stage_panel", security_config.draw_stage_panel);
-        security_config.max_recent_events = readOrDefault<int>(security, "max_recent_events", security_config.max_recent_events);
-        security_config.event_marker_hold_frames = readOrDefault<int>(security, "event_marker_hold_frames", security_config.event_marker_hold_frames);
-        security_config.pose_match_iou_threshold = readOrDefault<double>(security, "pose_match_iou_threshold", security_config.pose_match_iou_threshold);
-        security_config.pose_match_distance_norm = readOrDefault<double>(security, "pose_match_distance_norm", security_config.pose_match_distance_norm);
-        security_config.temporal_motion_speed_px_s = readOrDefault<double>(security, "temporal_motion_speed_px_s", security_config.temporal_motion_speed_px_s);
-        security_config.temporal_demo_label = readOrDefault<std::string>(security, "temporal_demo_label", security_config.temporal_demo_label);
-        security_config.state_file_name = readOrDefault<std::string>(security, "state_file_name", security_config.state_file_name);
-        if (security && security["zones"]) {
-            const auto zone_nodes = security["zones"];
-            if (!zone_nodes.IsSequence() || zone_nodes.size() == 0) {
-                config.people_flow.config_error = "people_flow.security.zones must be a non-empty sequence";
-            }
-            else {
-                std::vector<SecurityZoneConfig> zones;
-                bool valid_zones = true;
-                for (const auto& zone_node : zone_nodes) {
-                    SecurityZoneConfig zone;
-                    zone.zone_id = readOrDefault<std::string>(zone_node, "zone_id", "");
-                    zone.name = readOrDefault<std::string>(zone_node, "name", zone.zone_id);
-                    zone.enter_confirm_frames = readOrDefault<int>(zone_node, "enter_confirm_frames", zone.enter_confirm_frames);
-                    zone.exit_confirm_frames = readOrDefault<int>(zone_node, "exit_confirm_frames", zone.exit_confirm_frames);
-                    zone.dwell_alarm_ms = readOrDefault<long long>(zone_node, "dwell_alarm_ms", zone.dwell_alarm_ms);
-                    zone.cooldown_ms = readOrDefault<long long>(zone_node, "cooldown_ms", zone.cooldown_ms);
-                    zone.max_missed_frames = readOrDefault<int>(zone_node, "max_missed_frames", zone.max_missed_frames);
-                    zone.severity = readOrDefault<int>(zone_node, "severity", zone.severity);
-                    zone.emit_enter = readOrDefault<bool>(zone_node, "emit_enter", zone.emit_enter);
-                    zone.emit_exit = readOrDefault<bool>(zone_node, "emit_exit", zone.emit_exit);
-                    zone.emit_dwell = readOrDefault<bool>(zone_node, "emit_dwell", zone.emit_dwell);
-                    const auto polygon = zone_node["polygon_norm"];
-                    if (zone.zone_id.empty() || !polygon || !polygon.IsSequence() || polygon.size() < 3) {
-                        valid_zones = false;
-                        break;
-                    }
-                    for (const auto& point_node : polygon) {
-                        if (!point_node.IsSequence() || point_node.size() != 2) {
-                            valid_zones = false;
-                            break;
-                        }
-                        const double x = point_node[0].as<double>();
-                        const double y = point_node[1].as<double>();
-                        if (x < 0.0 || x > 1.0 || y < 0.0 || y > 1.0) {
-                            valid_zones = false;
-                            break;
-                        }
-                        zone.polygon_norm.push_back({ x, y });
-                    }
-                    if (!valid_zones) break;
-                    zones.push_back(std::move(zone));
-                }
-                if (valid_zones) security_config.zones = std::move(zones);
-                else config.people_flow.config_error = "people_flow.security.zones contains an invalid zone or polygon";
-            }
-        }
-        const auto pose_action = security["pose_actions"];
-        security_config.pose.min_keypoint_confidence = readOrDefault<double>(pose_action, "min_keypoint_confidence", security_config.pose.min_keypoint_confidence);
-        security_config.pose.confirm_frames = readOrDefault<int>(pose_action, "confirm_frames", security_config.pose.confirm_frames);
-        security_config.pose.release_frames = readOrDefault<int>(pose_action, "release_frames", security_config.pose.release_frames);
-        security_config.pose.cooldown_ms = readOrDefault<long long>(pose_action, "cooldown_ms", security_config.pose.cooldown_ms);
-        security_config.pose.fall_trunk_angle_deg = readOrDefault<double>(pose_action, "fall_trunk_angle_deg", security_config.pose.fall_trunk_angle_deg);
-        security_config.pose.fall_bbox_aspect_ratio = readOrDefault<double>(pose_action, "fall_bbox_aspect_ratio", security_config.pose.fall_bbox_aspect_ratio);
-        security_config.pose.crouch_knee_angle_deg = readOrDefault<double>(pose_action, "crouch_knee_angle_deg", security_config.pose.crouch_knee_angle_deg);
-        security_config.pose.running_speed_px_s = readOrDefault<double>(pose_action, "running_speed_px_s", security_config.pose.running_speed_px_s);
-        const auto temporal_action = security["temporal_action"];
-        security_config.temporal.window_size = readOrDefault<std::size_t>(temporal_action, "window_size", security_config.temporal.window_size);
-        security_config.temporal.min_samples = readOrDefault<std::size_t>(temporal_action, "min_samples", security_config.temporal.min_samples);
-        security_config.temporal.confirm_windows = readOrDefault<int>(temporal_action, "confirm_windows", security_config.temporal.confirm_windows);
-        security_config.temporal.release_windows = readOrDefault<int>(temporal_action, "release_windows", security_config.temporal.release_windows);
-        security_config.temporal.cooldown_ms = readOrDefault<long long>(temporal_action, "cooldown_ms", security_config.temporal.cooldown_ms);
-        security_config.temporal.start_threshold = readOrDefault<double>(temporal_action, "start_threshold", security_config.temporal.start_threshold);
-        security_config.temporal.end_threshold = readOrDefault<double>(temporal_action, "end_threshold", security_config.temporal.end_threshold);
-        security_config.temporal.severity = readOrDefault<int>(temporal_action, "severity", security_config.temporal.severity);
-
-        const auto counting = people_flow["counting"];
-        config.people_flow.counting.line_id = readOrDefault<std::string>(counting, "line_id", config.people_flow.counting.line_id);
-        config.people_flow.counting.transition_positive_to_negative = readOrDefault<std::string>(counting, "transition_positive_to_negative", config.people_flow.counting.transition_positive_to_negative);
-        config.people_flow.counting.hysteresis_px = readOrDefault<double>(counting, "hysteresis_px", config.people_flow.counting.hysteresis_px);
-        config.people_flow.counting.min_hits_for_count = readOrDefault<int>(counting, "min_hits_for_count", config.people_flow.counting.min_hits_for_count);
-        config.people_flow.counting.finite_segment_extension_norm = readOrDefault<double>(counting, "finite_segment_extension_norm", config.people_flow.counting.finite_segment_extension_norm);
-        config.people_flow.counting.rearm_distance_px = readOrDefault<double>(counting, "rearm_distance_px", config.people_flow.counting.rearm_distance_px);
-        config.people_flow.counting.rearm_frames = readOrDefault<int>(counting, "rearm_frames", config.people_flow.counting.rearm_frames);
-        config.people_flow.counting.min_crossing_interval_ms = readOrDefault<int>(counting, "min_crossing_interval_ms", config.people_flow.counting.min_crossing_interval_ms);
-        config.people_flow.counting.max_crossing_gap_ms = readOrDefault<int>(counting, "max_crossing_gap_ms", config.people_flow.counting.max_crossing_gap_ms);
-        if (counting && counting["line_a_norm"] && !readNormalizedPoint(counting["line_a_norm"], config.people_flow.counting.line_a_norm)) {
-            config.people_flow.config_error = "people_flow.counting.line_a_norm must contain two values in [0,1]";
-        }
-        if (counting && counting["line_b_norm"] && !readNormalizedPoint(counting["line_b_norm"], config.people_flow.counting.line_b_norm)) {
-            config.people_flow.config_error = "people_flow.counting.line_b_norm must contain two values in [0,1]";
-        }
-
-        const auto roi = people_flow["roi"];
-        config.people_flow.roi.enabled = readOrDefault<bool>(roi, "enabled", config.people_flow.roi.enabled);
-        if (roi && roi["polygon_norm"]) {
-            const auto polygon = roi["polygon_norm"];
-            if (!polygon.IsSequence() || polygon.size() < 3) {
-                config.people_flow.config_error = "people_flow.roi.polygon_norm requires at least three points";
-            }
-            else {
-                std::vector<NormalizedPoint> points;
-                bool valid = true;
-                for (const auto& node : polygon) {
-                    NormalizedPoint point;
-                    if (!readNormalizedPoint(node, point)) {
-                        valid = false;
-                        break;
-                    }
-                    points.push_back(point);
-                }
-                if (valid) config.people_flow.roi.polygon_norm = std::move(points);
-                else config.people_flow.config_error = "people_flow.roi.polygon_norm contains an invalid point";
-            }
-        }
-
-        const auto visualization = people_flow["visualization"];
-        auto& visual = config.people_flow.visualization;
-        visual.enabled = readOrDefault<bool>(visualization, "enabled", visual.enabled);
-        visual.draw_raw_person_detections = readOrDefault<bool>(visualization, "draw_raw_person_detections", visual.draw_raw_person_detections);
-        visual.draw_accepted_high_detections = readOrDefault<bool>(visualization, "draw_accepted_high_detections", visual.draw_accepted_high_detections);
-        visual.draw_accepted_low_detections = readOrDefault<bool>(visualization, "draw_accepted_low_detections", visual.draw_accepted_low_detections);
-        visual.draw_rejected_detections = readOrDefault<bool>(visualization, "draw_rejected_detections", visual.draw_rejected_detections);
-        visual.draw_rejection_reason = readOrDefault<bool>(visualization, "draw_rejection_reason", visual.draw_rejection_reason);
-        visual.draw_tentative_tracks = readOrDefault<bool>(visualization, "draw_tentative_tracks", visual.draw_tentative_tracks);
-        visual.draw_confirmed_tracks = readOrDefault<bool>(visualization, "draw_confirmed_tracks", visual.draw_confirmed_tracks);
-        visual.draw_missed_tracks = readOrDefault<bool>(visualization, "draw_missed_tracks", visual.draw_missed_tracks);
-        visual.draw_track_id = readOrDefault<bool>(visualization, "draw_track_id", visual.draw_track_id);
-        visual.draw_track_stats = readOrDefault<bool>(visualization, "draw_track_stats", visual.draw_track_stats);
-        visual.draw_velocity = readOrDefault<bool>(visualization, "draw_velocity", visual.draw_velocity);
-        visual.draw_anchor_points = readOrDefault<bool>(visualization, "draw_anchor_points", visual.draw_anchor_points);
-        visual.draw_trails = readOrDefault<bool>(visualization, "draw_trails", visual.draw_trails);
-        visual.draw_roi = readOrDefault<bool>(visualization, "draw_roi", visual.draw_roi);
-        visual.fill_roi = readOrDefault<bool>(visualization, "fill_roi", visual.fill_roi);
-        visual.draw_counting_line = readOrDefault<bool>(visualization, "draw_counting_line", visual.draw_counting_line);
-        visual.draw_line_endpoints = readOrDefault<bool>(visualization, "draw_line_endpoints", visual.draw_line_endpoints);
-        visual.draw_hysteresis_band = readOrDefault<bool>(visualization, "draw_hysteresis_band", visual.draw_hysteresis_band);
-        visual.draw_side_labels = readOrDefault<bool>(visualization, "draw_side_labels", visual.draw_side_labels);
-        visual.draw_counter_state = readOrDefault<bool>(visualization, "draw_counter_state", visual.draw_counter_state);
-        visual.draw_event_markers = readOrDefault<bool>(visualization, "draw_event_markers", visual.draw_event_markers);
-        visual.draw_status_panel = readOrDefault<bool>(visualization, "draw_status_panel", visual.draw_status_panel);
-        visual.draw_filter_statistics = readOrDefault<bool>(visualization, "draw_filter_statistics", visual.draw_filter_statistics);
-        visual.draw_legend = readOrDefault<bool>(visualization, "draw_legend", visual.draw_legend);
-        visual.compact_panel_auto = readOrDefault<bool>(visualization, "compact_panel_auto", visual.compact_panel_auto);
-        visual.save_event_frames = readOrDefault<bool>(visualization, "save_event_frames", visual.save_event_frames);
-        visual.event_marker_hold_frames = readOrDefault<int>(visualization, "event_marker_hold_frames", visual.event_marker_hold_frames);
-        visual.save_debug_frame_json = readOrDefault<bool>(visualization, "save_debug_frame_json", visual.save_debug_frame_json);
-        visual.box_thickness = readOrDefault<int>(visualization, "box_thickness", visual.box_thickness);
-        visual.line_thickness = readOrDefault<int>(visualization, "line_thickness", visual.line_thickness);
-        visual.trail_thickness = readOrDefault<int>(visualization, "trail_thickness", visual.trail_thickness);
-        visual.font_scale = readOrDefault<double>(visualization, "font_scale", visual.font_scale);
-        visual.ui_scale = readOrDefault<double>(visualization, "ui_scale", visual.ui_scale);
-
-        const auto storage = people_flow["storage"];
-        config.people_flow.storage.postgres_dsn_env = readOrDefault<std::string>(
-            storage, "postgres_dsn_env", config.people_flow.storage.postgres_dsn_env);
-        config.people_flow.storage.writer_queue_capacity = readOrDefault<int>(storage, "writer_queue_capacity", config.people_flow.storage.writer_queue_capacity);
-        config.people_flow.storage.writer_batch_size = readOrDefault<int>(storage, "writer_batch_size", config.people_flow.storage.writer_batch_size);
-        config.people_flow.storage.writer_flush_interval_ms = readOrDefault<int>(storage, "writer_flush_interval_ms", config.people_flow.storage.writer_flush_interval_ms);
-        config.people_flow.storage.events_max_len = readOrDefault<int>(storage, "events_max_len", config.people_flow.storage.events_max_len);
-        config.people_flow.storage.event_retention_days = readOrDefault<int>(storage, "event_retention_days", config.people_flow.storage.event_retention_days);
-        config.people_flow.storage.aggregate_retention_days = readOrDefault<int>(storage, "aggregate_retention_days", config.people_flow.storage.aggregate_retention_days);
-        config.people_flow.storage.evidence_on_crossing = readOrDefault<bool>(storage, "evidence_on_crossing", config.people_flow.storage.evidence_on_crossing);
-
-        if (config.people_flow.camera_id.empty()) config.people_flow.camera_id = "entry_camera_01";
-        if (config.people_flow.camera_profile.empty()) config.people_flow.camera_profile = config.people_flow.camera_id;
-        if (config.people_flow.config_version.empty()) config.people_flow.config_version = "entry-line-v1";
-        if (config.people_flow.output_dir.empty()) config.people_flow.output_dir = "./runtime/output/people_flow";
-        if (config.people_flow.report_dir.empty()) config.people_flow.report_dir = "./reports/people_flow";
-        config.people_flow.target_infer_fps = std::clamp(config.people_flow.target_infer_fps, 1, 60);
-        config.people_flow.snapshot_fps = std::clamp(config.people_flow.snapshot_fps, 1, config.people_flow.target_infer_fps);
-        config.people_flow.jpeg_quality = std::clamp(config.people_flow.jpeg_quality, 1, 100);
-        config.people_flow.initial_occupancy = std::max(0, config.people_flow.initial_occupancy);
-        config.people_flow.warmup_frames_after_reconnect = std::clamp(config.people_flow.warmup_frames_after_reconnect, 0, 1000);
-        config.people_flow.active_ttl_seconds = std::clamp(config.people_flow.active_ttl_seconds, 10, 3600);
-        config.people_flow.realtime_ttl_seconds = std::clamp(config.people_flow.realtime_ttl_seconds, 3, 3600);
-        config.people_flow.session_ttl_seconds = std::clamp(config.people_flow.session_ttl_seconds, 60, 31536000);
-        config.people_flow.stale_timeout_ms = std::clamp(config.people_flow.stale_timeout_ms, 5000, 300000);
-        config.people_flow.active_ttl_seconds = std::max(
-            config.people_flow.active_ttl_seconds,
-            (config.people_flow.stale_timeout_ms + 999) / 1000 + 30
-        );
-        // The TensorRT decode plugin has an internal 0.10 candidate floor.
-        config.people_flow.person.conf_low = std::clamp(config.people_flow.person.conf_low, 0.10, 1.0);
-        config.people_flow.person.conf_high = std::clamp(config.people_flow.person.conf_high, config.people_flow.person.conf_low, 1.0);
-        config.people_flow.person.min_width_px = std::max(1, config.people_flow.person.min_width_px);
-        config.people_flow.person.min_height_px = std::max(1, config.people_flow.person.min_height_px);
-        config.people_flow.person.max_aspect_ratio = std::clamp(config.people_flow.person.max_aspect_ratio, 1.0, 20.0);
-        if (config.people_flow.person.anchor_point != "center" && config.people_flow.person.anchor_point != "bottom_center") {
-            config.people_flow.person.anchor_point = "bottom_center";
-        }
-        config.people_flow.tracker.min_hits = std::clamp(config.people_flow.tracker.min_hits, 1, 100);
-        config.people_flow.tracker.max_age_frames = std::clamp(config.people_flow.tracker.max_age_frames, 1, 10000);
-        config.people_flow.tracker.match_iou_threshold = std::clamp(config.people_flow.tracker.match_iou_threshold, 0.0, 1.0);
-        config.people_flow.tracker.center_distance_gate_norm = std::clamp(config.people_flow.tracker.center_distance_gate_norm, 0.001, 1.0);
-        config.people_flow.tracker.velocity_smoothing = std::clamp(config.people_flow.tracker.velocity_smoothing, 0.0, 1.0);
-        config.people_flow.tracker.trail_length = std::clamp(config.people_flow.tracker.trail_length, 1, 1000);
-        config.people_flow.tracker.motion_alpha = std::clamp(config.people_flow.tracker.motion_alpha, 0.0, 1.0);
-        config.people_flow.tracker.motion_beta = std::clamp(config.people_flow.tracker.motion_beta, 0.0, 1.0);
-        config.people_flow.tracker.max_prediction_ms = std::clamp(config.people_flow.tracker.max_prediction_ms, 1, 10000);
-        security_config.mode = "demo";
-        security_config.max_recent_events = std::clamp(security_config.max_recent_events, 1, 500);
-        security_config.event_marker_hold_frames = std::clamp(security_config.event_marker_hold_frames, 1, 600);
-        security_config.pose_match_iou_threshold = std::clamp(security_config.pose_match_iou_threshold, 0.0, 1.0);
-        security_config.pose_match_distance_norm = std::clamp(security_config.pose_match_distance_norm, 0.001, 1.0);
-        security_config.temporal_motion_speed_px_s = std::clamp(security_config.temporal_motion_speed_px_s, 1.0, 10000.0);
-        if (security_config.temporal_demo_label.empty()) security_config.temporal_demo_label = "RAPID_MOTION_DEMO";
-        if (security_config.state_file_name.empty() ||
-            security_config.state_file_name.find('/') != std::string::npos ||
-            security_config.state_file_name.find('\\') != std::string::npos) {
-            security_config.state_file_name = "security.json";
-        }
-        security_config.pose.min_keypoint_confidence = std::clamp(security_config.pose.min_keypoint_confidence, 0.0, 1.0);
-        security_config.pose.confirm_frames = std::clamp(security_config.pose.confirm_frames, 1, 100);
-        security_config.pose.release_frames = std::clamp(security_config.pose.release_frames, 1, 100);
-        security_config.pose.cooldown_ms = std::clamp(security_config.pose.cooldown_ms, 0LL, 600000LL);
-        security_config.pose.fall_trunk_angle_deg = std::clamp(security_config.pose.fall_trunk_angle_deg, 0.0, 90.0);
-        security_config.pose.fall_bbox_aspect_ratio = std::clamp(security_config.pose.fall_bbox_aspect_ratio, 0.1, 10.0);
-        security_config.pose.crouch_knee_angle_deg = std::clamp(security_config.pose.crouch_knee_angle_deg, 1.0, 179.0);
-        security_config.pose.running_speed_px_s = std::clamp(security_config.pose.running_speed_px_s, 1.0, 10000.0);
-        security_config.temporal.window_size = std::clamp<std::size_t>(security_config.temporal.window_size, 2, 300);
-        security_config.temporal.min_samples = std::clamp<std::size_t>(security_config.temporal.min_samples, 1, security_config.temporal.window_size);
-        security_config.temporal.confirm_windows = std::clamp(security_config.temporal.confirm_windows, 1, 100);
-        security_config.temporal.release_windows = std::clamp(security_config.temporal.release_windows, 1, 100);
-        security_config.temporal.cooldown_ms = std::clamp(security_config.temporal.cooldown_ms, 0LL, 600000LL);
-        security_config.temporal.start_threshold = std::clamp(security_config.temporal.start_threshold, 0.0, 1.0);
-        security_config.temporal.end_threshold = std::clamp(security_config.temporal.end_threshold, 0.0, security_config.temporal.start_threshold);
-        security_config.temporal.severity = std::clamp(security_config.temporal.severity, 1, 5);
-        for (SecurityZoneConfig& zone : security_config.zones) {
-            zone.enter_confirm_frames = std::clamp(zone.enter_confirm_frames, 1, 100);
-            zone.exit_confirm_frames = std::clamp(zone.exit_confirm_frames, 1, 100);
-            zone.dwell_alarm_ms = std::clamp(zone.dwell_alarm_ms, 0LL, 86400000LL);
-            zone.cooldown_ms = std::clamp(zone.cooldown_ms, 0LL, 86400000LL);
-            zone.max_missed_frames = std::clamp(zone.max_missed_frames, 0, 100);
-            zone.severity = std::clamp(zone.severity, 1, 5);
-        }
-        config.people_flow.counting.hysteresis_px = std::clamp(config.people_flow.counting.hysteresis_px, 0.0, 1000.0);
-        config.people_flow.counting.min_hits_for_count = std::clamp(config.people_flow.counting.min_hits_for_count, 1, 100);
-        config.people_flow.counting.finite_segment_extension_norm = std::clamp(config.people_flow.counting.finite_segment_extension_norm, 0.0, 1.0);
-        config.people_flow.counting.rearm_distance_px = std::clamp(
-            config.people_flow.counting.rearm_distance_px,
-            config.people_flow.counting.hysteresis_px + 1.0,
-            2000.0);
-        config.people_flow.counting.rearm_frames = std::clamp(
-            config.people_flow.counting.rearm_frames, 1, 300);
-        config.people_flow.counting.min_crossing_interval_ms = std::clamp(
-            config.people_flow.counting.min_crossing_interval_ms, 0, 60000);
-        config.people_flow.counting.max_crossing_gap_ms = std::clamp(
-            config.people_flow.counting.max_crossing_gap_ms, 50, 60000);
-        config.people_flow.counting.transition_positive_to_negative = toLowerString(config.people_flow.counting.transition_positive_to_negative) == "out" ? "OUT" : "IN";
-        const double line_dx = config.people_flow.counting.line_b_norm.x - config.people_flow.counting.line_a_norm.x;
-        const double line_dy = config.people_flow.counting.line_b_norm.y - config.people_flow.counting.line_a_norm.y;
-        if (line_dx * line_dx + line_dy * line_dy < 1e-8) {
-            config.people_flow.config_error = "people_flow counting line endpoints must be different";
-        }
-        config.people_flow.visualization.event_marker_hold_frames = std::clamp(
-            config.people_flow.visualization.event_marker_hold_frames, 1, 1000);
-        config.people_flow.visualization.box_thickness = std::clamp(
-            config.people_flow.visualization.box_thickness, 1, 12);
-        config.people_flow.visualization.line_thickness = std::clamp(
-            config.people_flow.visualization.line_thickness, 1, 12);
-        config.people_flow.visualization.trail_thickness = std::clamp(
-            config.people_flow.visualization.trail_thickness, 1, 12);
-        config.people_flow.visualization.font_scale = std::clamp(
-            config.people_flow.visualization.font_scale, 0.25, 3.0);
-        config.people_flow.visualization.ui_scale = std::clamp(
-            config.people_flow.visualization.ui_scale, 0.0, 4.0);
-        config.people_flow.storage.writer_queue_capacity = std::clamp(config.people_flow.storage.writer_queue_capacity, 100, 1000000);
-        config.people_flow.storage.writer_batch_size = std::clamp(config.people_flow.storage.writer_batch_size, 1, 10000);
-        config.people_flow.storage.writer_flush_interval_ms = std::clamp(config.people_flow.storage.writer_flush_interval_ms, 50, 60000);
-        config.people_flow.storage.events_max_len = std::clamp(config.people_flow.storage.events_max_len, 100, 1000000);
-        config.people_flow.storage.event_retention_days = std::clamp(config.people_flow.storage.event_retention_days, 1, 3650);
-        config.people_flow.storage.aggregate_retention_days = std::clamp(config.people_flow.storage.aggregate_retention_days, 1, 36500);
 
         auto redis = root["redis"];
         config.redis.enabled = readOrDefault<bool>(redis, "enabled", config.redis.enabled);
@@ -1225,9 +905,6 @@ namespace yolo11_server {
             else if (config.model.type == "cls") {
                 config.redis.stream_key = "yolo:stream:cls";
             }
-            else if (config.model.type == "pose") {
-                config.redis.stream_key = "yolo:stream:pose";
-            }
             else if (config.model.type == "seg") {
                 config.redis.stream_key = "yolo:stream:seg";
             }
@@ -1241,9 +918,6 @@ namespace yolo11_server {
             }
             else if (config.model.type == "cls") {
                 config.redis.consumer_group = "yolo11_cls_group";
-            }
-            else if (config.model.type == "pose") {
-                config.redis.consumer_group = "yolo11_pose_group";
             }
             else if (config.model.type == "seg") {
                 config.redis.consumer_group = "yolo11_seg_group";
