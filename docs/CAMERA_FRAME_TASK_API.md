@@ -15,9 +15,8 @@ Authorization: Bearer <YOLO11_CAMERA_TASK_ADMIN_TOKEN>
 RTSP URI, database DSN, usernames, passwords, and environment-variable values
 are forbidden in request bodies and responses.
 
-The compatibility People Flow `start` and `stop` routes use this same Bearer
-token. The Qt client reads it from `YOLO11_CAMERA_TASK_ADMIN_TOKEN` and sends
-it only in the `Authorization` header.
+The Web administration client sends the token only in the `Authorization`
+header.
 
 ## Camera CRUD
 
@@ -41,8 +40,8 @@ it only in the `Authorization` header.
   "analysis": {
     "enabled": true,
     "target_infer_fps": 5.0,
-    "algorithm_profile": "security_default",
-    "algorithms": ["people_flow", "electronic_fence"]
+    "algorithm_profile": "vehicle_default",
+    "algorithms": ["vehicle_detection", "vehicle_attribute"]
   },
   "callback_profile": "backend_primary"
 }
@@ -107,7 +106,7 @@ camera is soft-deleted. An active deletion returns `202`; idle deletion returns
 - `POST /cameras/{camera_id}/stop`
 - `GET /cameras/{camera_id}/status`
 - `GET /cameras/{camera_id}/runs?limit=20&offset=0`
-- `GET /cameras/{camera_id}/alerts?event_type=PEOPLE_FLOW_IN&minimum_severity=1&limit=20&offset=0`
+- `GET /cameras/{camera_id}/alerts?event_type=VEHICLE_TRACK_READY&minimum_severity=1&limit=20&offset=0`
 - `GET /cameras/{camera_id}/latest-frame`
 
 START/STOP accept `Idempotency-Key` and are also resource-idempotent when the
@@ -212,3 +211,6 @@ callback snapshot required by the deployment configuration.
 
 All `/api/v1/camera-tasks...` routes are removed. Clients must migrate to
 `/api/v1/cameras...` and use `camera_id` instead of `task_id`.
+
+The legacy person-counting compatibility API is also removed. Vehicle clients
+must use the Camera lifecycle and vehicle event routes.

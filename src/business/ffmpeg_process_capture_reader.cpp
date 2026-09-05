@@ -1,6 +1,7 @@
 #include "business/ffmpeg_process_capture_reader.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <limits>
@@ -336,7 +337,7 @@ SharedCameraFrame FfmpegProcessCaptureReader::getLatestFrameShared(
     std::uint64_t after_sequence
 ) const {
     const auto latest = std::atomic_load(&latest_);
-    if (!latest || latest->sequence == 0 || latest->sequence <= after_sequence || latest->image.empty()) {
+    if (!latest || latest->sequence == 0 || latest->sequence <= after_sequence || !latest->valid()) {
         return {};
     }
     return latest;
@@ -484,7 +485,11 @@ void FfmpegProcessCaptureReader::captureLoop() noexcept {
             long long fps_window_frames = 0;
             const std::size_t frame_size = stream_ok
                 ? static_cast<std::size_t>(width) * height * 3U / 2U : 0;
-            std::vector<unsigned char> yuv(frame_size);
+            std::array<std::shared_ptr<std::vector<unsigned char>>, 3> yuv_buffers;
+            for (auto& buffer : yuv_buffers) {
+                buffer = std::make_shared<std::vector<unsigned char>>(frame_size);
+            }
+            std::size_t next_buffer = 0;
             bool first_frame = true;
             while (stream_ok && !stop_requested_.load()) {
                 std::string frame_header;
@@ -504,12 +509,25 @@ void FfmpegProcessCaptureReader::captureLoop() noexcept {
                     stream_ok = false;
                     break;
                 }
+                std::shared_ptr<std::vector<unsigned char>> yuv;
+                while (!yuv && !stop_requested_.load()) {
+                    for (std::size_t offset = 0; offset < yuv_buffers.size(); ++offset) {
+                        const std::size_t index = (next_buffer + offset) % yuv_buffers.size();
+                        if (yuv_buffers[index].use_count() == 1) {
+                            yuv = yuv_buffers[index];
+                            next_buffer = (index + 1) % yuv_buffers.size();
+                            break;
+                        }
+                    }
+                    if (!yuv) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+                if (!yuv) break;
                 std::size_t payload_received = 0;
-                if (!readExact(child.stdout_read, child.process, yuv.data(), yuv.size(),
+                if (!readExact(child.stdout_read, child.process, yuv->data(), yuv->size(),
                         frame_timeout_ms, stop_requested_, &payload_received)) {
                     if (!stop_requested_.load()) {
                         std::cerr << "[FFMPEG_PIPE] frame payload read failed: received="
-                                  << payload_received << ", expected=" << yuv.size() << '\n';
+                                  << payload_received << ", expected=" << yuv->size() << '\n';
                     }
                     stream_ok = false;
                     break;
@@ -520,13 +538,6 @@ void FfmpegProcessCaptureReader::captureLoop() noexcept {
                     continue;
                 }
 
-                cv::Mat yuv_frame(height * 3 / 2, width, CV_8UC1, yuv.data());
-                cv::Mat decoded;
-                cv::cvtColor(yuv_frame, decoded, cv::COLOR_YUV2BGR_I420);
-                if (decoded.empty()) {
-                    stream_ok = false;
-                    break;
-                }
                 const long long capture_time_ms = nowMs();
                 const bool resolution_changed = previous_width > 0 && previous_height > 0 &&
                     (previous_width != width || previous_height != height);
@@ -544,7 +555,16 @@ void FfmpegProcessCaptureReader::captureLoop() noexcept {
                 }
 
                 auto published = std::make_shared<FrameEnvelope>();
-                published->image = std::move(decoded);
+                const std::size_t y_bytes = static_cast<std::size_t>(width) * height;
+                published->i420.bytes = std::move(yuv);
+                published->i420.width = width;
+                published->i420.height = height;
+                published->i420.y_offset = 0;
+                published->i420.u_offset = y_bytes;
+                published->i420.v_offset = y_bytes + y_bytes / 4U;
+                published->i420.y_stride_bytes = static_cast<std::size_t>(width);
+                published->i420.u_stride_bytes = static_cast<std::size_t>(width / 2);
+                published->i420.v_stride_bytes = static_cast<std::size_t>(width / 2);
                 published->sequence = ++sequence;
                 published->capture_time_ms = capture_time_ms;
                 published->publish_time = std::chrono::steady_clock::now();

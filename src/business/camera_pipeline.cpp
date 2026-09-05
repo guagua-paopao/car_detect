@@ -318,7 +318,6 @@ void CameraPipeline::runImpl() {
                             command_.analysis_config_version;
                         analysis_job.target_infer_fps =
                             command_.target_infer_fps;
-                        analysis_job.initial_occupancy = command_.initial_occupancy;
                         analysis_job.snapshot_fps = command_.snapshot_fps;
                         analysis_job.algorithm_parameters_json =
                             command_.algorithm_parameters_json;

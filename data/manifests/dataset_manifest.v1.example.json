@@ -1,0 +1,127 @@
+{
+  "schema_version": "1.0",
+  "dataset_version": "dataset-example-v1",
+  "labels_version": "vehicle-labels-v1",
+  "created_at": "2026-07-28T00:00:00Z",
+  "purpose": "multitask",
+  "license_review_status": "approved",
+  "split_policy": {
+    "group_keys": [
+      "camera_id",
+      "video_id",
+      "track_group"
+    ],
+    "ratios": {
+      "train": 0.7,
+      "validation": 0.15,
+      "test": 0.15
+    },
+    "seed": 20260728,
+    "closed_test_groups": [
+      "fixture_test_track_001"
+    ]
+  },
+  "sources": [
+    {
+      "source_id": "project_fixture",
+      "name": "Repository contract-test fixture",
+      "source_type": "test_fixture",
+      "license_id": "PROJECT-FIXTURE-ONLY",
+      "usage_status": "approved_internal",
+      "attribution_required": false,
+      "redistribution_allowed": false,
+      "notes": "Illustrative metadata only; no image payload is committed."
+    }
+  ],
+  "samples": [
+    {
+      "sample_id": "fixture_train_001",
+      "relative_path": "fixtures/train/fixture_train_001.jpg",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "source_id": "project_fixture",
+      "split": "train",
+      "task": "multitask",
+      "group": {
+        "camera_id": "fixture_camera_train",
+        "video_id": "fixture_video_train",
+        "track_group": "fixture_train_track_001"
+      },
+      "image": {
+        "width": 1920,
+        "height": 1080
+      },
+      "annotations": {
+        "detection": {
+          "bbox_xyxy_norm": [0.20, 0.25, 0.70, 0.85],
+          "vehicle_class": "car",
+          "occluded": false,
+          "truncated": false
+        },
+        "attributes": {
+          "body_type": "suv",
+          "color": "white",
+          "crop_quality": "good",
+          "viewpoint": "front_three_quarter",
+          "blur": false,
+          "occluded": false,
+          "truncated": false,
+          "night": false
+        }
+      }
+    },
+    {
+      "sample_id": "fixture_validation_001",
+      "relative_path": "fixtures/validation/fixture_validation_001.jpg",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "source_id": "project_fixture",
+      "split": "validation",
+      "task": "attributes",
+      "group": {
+        "camera_id": "fixture_camera_validation",
+        "video_id": "fixture_video_validation",
+        "track_group": "fixture_validation_track_001"
+      },
+      "image": {
+        "width": 640,
+        "height": 360
+      },
+      "annotations": {
+        "attributes": {
+          "body_type": "unknown",
+          "color": "silver_gray",
+          "crop_quality": "usable",
+          "viewpoint": "side",
+          "blur": true,
+          "occluded": false,
+          "truncated": false,
+          "night": true
+        }
+      }
+    },
+    {
+      "sample_id": "fixture_test_001",
+      "relative_path": "fixtures/test/fixture_test_001.jpg",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "source_id": "project_fixture",
+      "split": "test",
+      "task": "detection",
+      "group": {
+        "camera_id": "fixture_camera_test",
+        "video_id": "fixture_video_test",
+        "track_group": "fixture_test_track_001"
+      },
+      "image": {
+        "width": 1280,
+        "height": 720
+      },
+      "annotations": {
+        "detection": {
+          "bbox_xyxy_norm": [0.10, 0.15, 0.50, 0.75],
+          "vehicle_class": "truck",
+          "occluded": true,
+          "truncated": false
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "experiment_group": "DOMAIN-BMD45-V1",
+  "dataset_version": "dataset-domain-bmd45-v1",
+  "base_checkpoint": "DET-LARGE-ONTOLOGY-R3-FIX1/weights/best.pt",
+  "input_size": 960,
+  "seed": 20260811,
+  "stages": [
+    {
+      "name": "DET-DOMAIN-BMD45-WARMUP-R1",
+      "epochs": 5,
+      "freeze": 10,
+      "optimizer": "AdamW",
+      "lr0": 0.001,
+      "lrf": 0.1,
+      "close_mosaic": 2
+    },
+    {
+      "name": "DET-DOMAIN-BMD45-FINETUNE-R1",
+      "epochs": 40,
+      "freeze": 0,
+      "optimizer": "AdamW",
+      "lr0": 0.001,
+      "lrf": 0.05,
+      "close_mosaic": 8
+    }
+  ],
+  "evaluation": {
+    "selection": "base validation plus BMD-45 official validation",
+    "regression_test": "frozen original VCAS test split",
+    "video_holdout": "vcas_rtsp_demo_60s.mp4"
+  },
+  "mio_tcd_policy": "research-only until CC-BY-NC-SA-4.0 commercial-use review is resolved"
+}

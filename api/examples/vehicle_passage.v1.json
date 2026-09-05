@@ -26,9 +26,9 @@
   },
   "model_versions": {
     "detector": "vehicle-det-v1",
-    "attribute": "vehicle-attr-v1",
+    "attribute": "vehicle-attr-best-components-256-r1",
     "labels": "vehicle-labels-v1",
-    "config": "vehicle-analytics-m0"
+    "config": "vehicle-analytics-m4"
   },
   "evidence": {
     "snapshot_url": "/api/v1/vehicle-events/ve_gate_01_42/snapshot",

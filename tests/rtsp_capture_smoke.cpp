@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
             return 2;
         }
         const auto config = yolo11_server::AppConfig::loadFromYaml(argv[1]);
-        const std::string profile = config.people_flow.camera_profile;
+        const std::string profile = "entry_camera_01";
         auto registry = yolo11_server::createSharedCameraFrameHubRegistry(config);
         if (!registry || profile.empty()) {
             std::cerr << "FAIL: production Camera FrameHub configuration is unavailable\n";

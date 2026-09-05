@@ -2,182 +2,56 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>视觉分析控制台</title>
-  <link rel="stylesheet" href="/camera-admin/styles.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>车辆智能检测中心</title>
+  <link rel="stylesheet" href="/camera-admin/styles.css?v=20260826-workbench-v4">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <p class="eyebrow">UNIFIED VISION CONTROL</p>
-      <h1>视觉分析控制台</h1>
-      <p class="subtitle">摄像头、人员流量、安全分析与告警的一体化运行视图</p>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="主导航">
+      <div class="brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 13.5 6.3 8h11.4l2.3 5.5v5.2H4v-5.2Z"/><path d="M7 8 8.3 5h7.4L17 8M4 14h16M7.5 18.7h.1M16.4 18.7h.1" stroke-linecap="round"/></svg></div><div><strong>车辆智能检测</strong><small>VEHICLE WORKBENCH</small></div></div>
+      <nav class="nav-group" aria-label="工作台模块">
+        <div class="nav-label">工作台</div>
+        <button class="nav-item active" data-view="realtime"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3M7 8h10M7 12h5" stroke-linecap="round"/></svg><span>实时检测</span></button>
+        <button class="nav-item" data-view="events"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 3h11l3 3v15H5z"/><path d="M8 11h8M8 15h8M8 7h4" stroke-linecap="round"/></svg><span>车辆事件</span></button>
+        <button class="nav-item" data-view="cameras"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 8h11a3 3 0 0 1 3 3v5H4z"/><path d="m18 11 3-2v8l-3-2M7 16v3M10 16v3" stroke-linecap="round"/></svg><span>摄像头管理</span></button>
+        <button class="nav-item" data-view="devices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 14a8 8 0 1 1 16 0v3H4z"/><path d="M8 17v2M12 17v2M16 17v2" stroke-linecap="round"/></svg><span>设备状态</span></button>
+        <div class="nav-label">配置</div>
+        <button class="nav-item" data-view="models"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z"/><path d="m4.4 7.7 7.6 4.4 7.6-4.4M12 12v9"/></svg><span>模型管理</span></button>
+        <button class="nav-item" data-view="rules"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round"/><circle cx="9" cy="6" r="2" fill="var(--surface)"/><circle cx="15" cy="12" r="2" fill="var(--surface)"/><circle cx="11" cy="18" r="2" fill="var(--surface)"/></svg><span>规则配置</span></button>
+        <button class="nav-item" data-view="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3.5"/><path d="m19 13.5 1.2 1-.9 1.6-1.5-.5a7.2 7.2 0 0 1-1.3 1.1l.1 1.6-1.8.6-.8-1.4a7 7 0 0 1-1.7.2l-.8 1.4-1.8-.6.1-1.6a7.2 7.2 0 0 1-1.3-1.1l-1.5.5-.9-1.6 1.2-1a6.7 6.7 0 0 1-.1-1.5l-1.2-1 .9-1.6 1.5.5a7.2 7.2 0 0 1 1.3-1.1L9.7 7l1.8-.6.8 1.4a7 7 0 0 1 1.7-.2l.8-1.4 1.8.6-.1 1.6a7.2 7.2 0 0 1 1.3 1.1l1.5-.5.9 1.6-1.2 1c.1.5.1 1 0 1.5Z" stroke-linejoin="round"/></svg><span>系统设置</span></button>
+        <button class="nav-item" data-view="logs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5" stroke-linecap="round"/></svg><span>日志管理</span></button>
+      </nav>
+      <div class="sidebar-footer"><button type="button" id="collapse-sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m14 7-5 5 5 5M19 7l-5 5 5 5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>折叠菜单</span></button></div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div class="topbar-title"><h1>车辆智能检测中心</h1><span>固定摄像头车辆分析工作台</span></div>
+        <nav class="top-nav" aria-label="快捷模块"><button class="active" data-top-view="realtime">实时检测</button><button data-top-view="events">车辆事件</button><button data-top-view="cameras">摄像头</button></nav>
+        <div class="top-actions"><button class="icon-button" id="notice-button" type="button" aria-label="通知"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4" stroke-linecap="round"/></svg></button><div class="auth-box"><input id="token" type="password" autocomplete="off" placeholder="管理员 Token"><button class="button primary" id="connect" type="button">连接</button><span class="badge neutral" id="connection">未连接</span></div></div>
+      </header>
+
+      <main>
+        <section class="page-heading"><div><h2 id="page-title">实时检测</h2><p id="page-description">连接后查看摄像头车辆轨迹、属性识别与运行状态。</p></div><span class="last-updated" id="last-updated">最后更新：—</span></section>
+        <section id="notice" class="notice hidden" aria-live="polite"></section>
+
+        <div id="realtime-view">
+          <form class="toolbar" id="realtime-filter"><label class="field"><span>摄像头</span><select id="monitor-camera"><option value="">暂无摄像头</option></select></label><label class="field"><span>时间范围</span><select id="monitor-window"><option value="1h">近 1 小时</option><option value="6h">近 6 小时</option><option value="today">今日</option></select></label><label class="field"><span>Track ID / 类别</span><input id="monitor-search" type="search" placeholder="例如 T-1042 或 SUV"></label><span class="toolbar-spacer"></span><label class="check-inline"><input id="monitor-auto" type="checkbox" checked>自动刷新</label><button class="button" id="monitor-refresh" type="button">刷新</button><button class="button primary" type="submit">查询</button><button class="button" id="monitor-reset" type="button">重置</button></form>
+          <section class="kpi-grid" aria-label="车辆运行指标"><article class="card kpi-card"><div class="kpi-icon teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 13.5 6.2 8h11.6l2.2 5.5v4.8H4z"/><path d="M7 8 8.2 5h7.6L17 8M4 14h16M7.5 18.5h.1M16.4 18.5h.1" stroke-linecap="round"/></svg></div><div><div class="kpi-label">在线摄像头</div><div class="kpi-value" id="kpi-cameras">—<small>/ —</small></div></div></article><article class="card kpi-card"><div class="kpi-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3.5 14 6 8h12l2.5 6v4H3.5z"/><path d="M6 8 7.5 5h9L18 8M3.5 14h17M7 18h.1M17 18h.1" stroke-linecap="round"/></svg></div><div><div class="kpi-label">当前车辆</div><div class="kpi-value" id="kpi-vehicles">—<small>辆</small></div></div></article><article class="card kpi-card"><div class="kpi-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 3h12v18H6z"/><path d="M9 8h6M9 12h6M9 16h4" stroke-linecap="round"/></svg></div><div><div class="kpi-label">当前窗口事件</div><div class="kpi-value" id="kpi-events">—<small>件</small></div></div></article><article class="card kpi-card"><div class="kpi-icon teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m12 3 7 3v5c0 4.6-2.8 7.8-7 10-4.2-2.2-7-5.4-7-10V6z"/><path d="m8.5 11.8 2.2 2.2 4.8-5" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div><div class="kpi-label">平均置信度</div><div class="kpi-value" id="kpi-confidence">—<small>%</small></div></div></article></section>
+          <section class="section-grid"><article class="card overview-card"><div class="card-header"><h3>实时检测概览</h3><span id="overview-window">等待连接</span></div><div class="overview-body"><div class="category-panel"><div class="category-title">车辆分类</div><div id="category-bars"><div class="empty-state compact">连接后显示分类统计</div></div><div class="overview-summary"><div><strong id="overview-total">—</strong><small>活跃车辆</small></div><div class="confidence" id="overview-stability">—</div></div></div><div class="chart-wrap"><p class="chart-title">当前窗口车辆数量趋势</p><svg class="line-chart" viewBox="0 0 480 190" role="img" aria-label="车辆数量趋势示意图"><line class="chart-grid-line" x1="38" y1="20" x2="470" y2="20"/><line class="chart-grid-line" x1="38" y1="57" x2="470" y2="57"/><line class="chart-grid-line" x1="38" y1="94" x2="470" y2="94"/><line class="chart-grid-line" x1="38" y1="131" x2="470" y2="131"/><line class="chart-grid-line" x1="38" y1="168" x2="470" y2="168"/><path class="chart-area" d="M38 144 L110 92 L182 83 L254 42 L326 101 L398 86 L470 116 L470 168 L38 168 Z"/><path class="chart-line" d="M38 144 L110 92 L182 83 L254 42 L326 101 L398 86 L470 116"/><circle class="chart-dot" cx="38" cy="144" r="3"/><circle class="chart-dot" cx="110" cy="92" r="3"/><circle class="chart-dot" cx="182" cy="83" r="3"/><circle class="chart-dot" cx="254" cy="42" r="3"/><circle class="chart-dot" cx="326" cy="101" r="3"/><circle class="chart-dot" cx="398" cy="86" r="3"/><circle class="chart-dot" cx="470" cy="116" r="3"/><text class="chart-axis" x="20" y="171">0</text><text class="chart-axis" x="18" y="134">10</text><text class="chart-axis" x="18" y="97">20</text><text class="chart-axis" x="18" y="60">30</text><text class="chart-axis" x="18" y="23">40</text><text class="chart-axis" x="28" y="185">10:10</text><text class="chart-axis" x="100" y="185">10:20</text><text class="chart-axis" x="172" y="185">10:30</text><text class="chart-axis" x="244" y="185">10:40</text><text class="chart-axis" x="316" y="185">10:50</text><text class="chart-axis" x="388" y="185">11:00</text><text class="chart-axis" x="454" y="185">11:10</text></svg></div></div></article><article class="card live-card"><div class="card-header"><h3>实时画面</h3><span class="live-status" id="live-status"><i></i>未连接</span></div><div class="live-stage" id="snapshot-stage"><img id="analysis-snapshot" alt="车辆分析标注快照"><div class="snapshot-placeholder" id="snapshot-placeholder">连接后显示标注画面</div><div class="live-overlay"><span class="live-tag" id="snapshot-camera">—</span><span class="live-tag" id="snapshot-time">—</span></div></div></article></section>
+          <section class="data-grid"><article class="card table-card"><div class="card-header"><h3>当前识别车辆</h3><span id="vehicle-count">— 条轨迹</span></div><div class="table-wrap"><table><thead><tr><th>Track ID</th><th>车辆类别</th><th>车身类型</th><th>颜色</th><th>置信度</th><th>状态</th><th>最后出现</th></tr></thead><tbody id="vehicle-rows"></tbody></table><div class="empty-state" id="vehicle-empty">暂无实时车辆轨迹</div></div></article><article class="card events-card"><div class="card-header"><h3>最近车辆事件</h3><button class="button link-button" data-view-action="events">查看全部</button></div><div class="event-list" id="event-list"><div class="empty-state compact">暂无事件</div></div></article></section>
+          <section class="card model-card"><div class="card-header"><h3>模型状态</h3><span id="model-registry-version">等待连接</span></div><div class="model-grid" id="model-grid"><div class="empty-state compact">连接后读取模型注册表</div></div></section>
+        </div>
+        <section id="page-view" hidden></section>
+      </main>
     </div>
-    <div class="auth">
-      <label for="token">管理员 Token</label>
-      <input id="token" type="password" autocomplete="off"
-             placeholder="仅保存在当前页面内存">
-      <button id="connect" class="primary">连接</button>
-      <span id="connection" class="badge neutral">未连接</span>
-    </div>
-  </header>
+  </div>
 
-  <main>
-    <section id="notice" class="notice hidden" aria-live="polite"></section>
-    <nav class="tabs" aria-label="管理模块">
-      <button data-tab="cameras" class="active">摄像头</button>
-      <button data-tab="monitoring">实时监控</button>
-      <button data-tab="alerts">告警中心</button>
-      <button data-tab="profiles">可用 Profile</button>
-      <button data-tab="hubs">共享 Hub</button>
-      <button data-tab="operations">运行概览</button>
-    </nav>
-
-    <section id="cameras" class="panel tab-panel active">
-      <div class="panel-head">
-        <div>
-          <h2>摄像头与算法配置</h2>
-          <p>一个 Camera Run 同时完成共享解码、抽帧、分析、快照与告警。</p>
-        </div>
-        <div class="actions">
-          <button data-refresh="cameras">刷新</button>
-          <button id="new-camera" class="primary">新增摄像头</button>
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>ID / 名称</th><th>Profile</th><th>抽帧</th><th>算法</th><th>状态</th><th>版本</th><th>操作</th></tr></thead>
-          <tbody id="camera-rows"></tbody>
-        </table>
-      </div>
-      <div id="camera-detail" class="detail empty">选择“状态”或“运行历史”查看 Camera Run 数据。</div>
-    </section>
-
-    <section id="monitoring" class="panel tab-panel">
-      <div class="panel-head">
-        <div>
-          <h2>实时分析监控</h2>
-          <p>直接读取 Camera 状态与标注快照，不依赖 /people-flow/*。</p>
-        </div>
-        <div class="toolbar">
-          <label>摄像头<select id="monitor-camera"></select></label>
-          <label class="check compact"><input id="monitor-auto" type="checkbox" checked>自动刷新</label>
-          <button data-refresh="monitoring">立即刷新</button>
-        </div>
-      </div>
-      <div class="monitor-layout">
-        <div>
-          <div id="monitor-kpis" class="kpi-grid"></div>
-          <div id="phase-cards" class="phase-grid"></div>
-          <div id="monitor-detail" class="detail empty">连接后选择摄像头查看实时分析。</div>
-        </div>
-        <figure class="snapshot-card">
-          <div class="snapshot-head">
-            <figcaption>最新标注快照</figcaption>
-            <span id="monitor-updated" class="muted">尚未刷新</span>
-          </div>
-          <div class="snapshot-stage">
-            <img id="analysis-snapshot" alt="摄像头算法标注快照">
-            <p id="snapshot-placeholder">快照尚未就绪</p>
-          </div>
-        </figure>
-      </div>
-    </section>
-
-    <section id="alerts" class="panel tab-panel">
-      <div class="panel-head">
-        <div>
-          <h2>统一告警中心</h2>
-          <p>查询 Camera Run 产生的规范告警、证据与回调投递状态。</p>
-        </div>
-        <div class="toolbar">
-          <label>摄像头<select id="alert-camera"></select></label>
-          <label>最低级别<select id="alert-severity"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
-          <label>事件类型<input id="alert-type" maxlength="80" placeholder="全部"></label>
-          <button data-refresh="alerts">查询</button>
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>时间</th><th>事件</th><th>级别</th><th>Track</th><th>算法</th><th>投递</th><th>Run</th></tr></thead>
-          <tbody id="alert-rows"></tbody>
-        </table>
-      </div>
-    </section>
-
-    <section id="profiles" class="panel tab-panel">
-      <div class="panel-head">
-        <div><h2>可用 Camera Profile</h2><p>Profile 只读并来自服务端允许列表；页面不接收 RTSP URI、用户名或密码。</p></div>
-        <button data-refresh="profiles">刷新</button>
-      </div>
-      <div class="table-wrap"><table><thead><tr><th>ID</th><th>显示名称</th><th>环境变量引用</th><th>传输</th><th>启用</th></tr></thead><tbody id="profile-rows"></tbody></table></div>
-    </section>
-
-    <section id="hubs" class="panel tab-panel">
-      <div class="panel-head">
-        <div><h2>共享 FrameHub</h2><p>同一 Profile 的所有 Camera Pipeline 共享一次 FFmpeg 解码。</p></div>
-        <button data-refresh="hubs">刷新</button>
-      </div>
-      <div id="hub-cards" class="cards"></div>
-    </section>
-
-    <section id="operations" class="panel tab-panel">
-      <div class="panel-head">
-        <div><h2>运行概览</h2><p>健康、就绪、Worker fencing、PostgreSQL、推理池和告警指标。</p></div>
-        <button data-refresh="operations">刷新</button>
-      </div>
-      <div id="operations-content" class="cards"></div>
-    </section>
-  </main>
-
-  <dialog id="camera-dialog">
-    <form id="camera-form" method="dialog">
-      <div class="dialog-head">
-        <div><p class="eyebrow">CAMERA DEFINITION</p><h2 id="camera-dialog-title">新增摄像头</h2></div>
-        <button type="button" data-close="camera-dialog" aria-label="关闭">×</button>
-      </div>
-      <input id="camera-version" type="hidden">
-      <fieldset>
-        <legend>基本与抽帧</legend>
-        <div class="form-grid">
-          <label>Camera ID<input id="camera-id" required maxlength="160" pattern="[A-Za-z0-9_-]+"></label>
-          <label>名称<input id="camera-name" required maxlength="128"></label>
-          <label>Camera Profile<select id="camera-profile" required></select></label>
-          <label>抽帧周期（毫秒）<input id="camera-interval" type="number" min="100" max="3600000" value="1000" required></label>
-          <label>输出模式<select id="camera-output"><option value="latest">latest</option><option value="archive">archive</option><option value="both">both</option></select></label>
-          <label>JPEG 质量<input id="camera-quality" type="number" min="1" max="100" value="90" required></label>
-          <label>最大宽度（0=不限）<input id="camera-width" type="number" min="0" max="8192" value="0" required></label>
-          <label>最大高度（0=不限）<input id="camera-height" type="number" min="0" max="8192" value="0" required></label>
-          <label>保留天数<input id="camera-retention" type="number" min="1" max="3650" value="7" required></label>
-          <label>最多归档帧<input id="camera-max-frames" type="number" min="1" max="1000000" value="100000" required></label>
-          <label class="check"><input id="camera-enabled" type="checkbox" checked>启用并保持运行</label>
-        </div>
-      </fieldset>
-      <fieldset>
-        <legend>算法分析</legend>
-        <div class="form-grid">
-          <label class="check"><input id="analysis-enabled" type="checkbox" checked>启用统一算法 Pipeline</label>
-          <label>目标推理 FPS<input id="analysis-fps" type="number" min="0.1" max="120" step="0.1" value="5" required></label>
-          <label>算法 Profile<input id="algorithm-profile" maxlength="160" value="security_default" required></label>
-          <label>回调 Profile（可选）<input id="callback-profile" maxlength="160" placeholder="例如 backend_primary"></label>
-        </div>
-        <div class="algorithm-grid" aria-label="算法能力">
-          <label class="check"><input type="checkbox" name="algorithm" value="people_flow" checked>People Flow</label>
-          <label class="check"><input type="checkbox" name="algorithm" value="security" checked>Security</label>
-          <label class="check"><input type="checkbox" name="algorithm" value="electronic_fence">电子围栏</label>
-          <label class="check"><input type="checkbox" name="algorithm" value="pose_action">Pose 动作</label>
-          <label class="check"><input type="checkbox" name="algorithm" value="temporal_action">Temporal 动作</label>
-        </div>
-      </fieldset>
-      <p class="warning">修改运行中的摄像头会停止并 join 旧 Pipeline，再以相同 camera_id 启动新 Run。</p>
-      <div class="dialog-actions"><button type="button" data-close="camera-dialog">取消</button><button type="submit" class="primary">保存</button></div>
-    </form>
-  </dialog>
-
-  <dialog id="frame-dialog" class="frame-dialog">
-    <div class="dialog-head"><h2>最新原始抽帧</h2><button type="button" data-close="frame-dialog" aria-label="关闭">×</button></div>
-    <img id="latest-frame" alt="摄像头最新原始抽帧">
-  </dialog>
-  <script src="/camera-admin/app.js" defer></script>
+  <dialog id="event-dialog"><div class="dialog-head"><div><span class="eyebrow">VEHICLE EVENT</span><h2>车辆事件详情</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="关闭">×</button></div><div class="event-dialog-content"><div class="event-detail-grid" id="event-detail-grid"></div><div class="event-snapshot-frame"><img id="event-snapshot" class="hidden" alt="车辆事件快照"><div id="event-snapshot-placeholder">事件快照加载中…</div></div></div><div class="dialog-actions"><button class="button" type="button" data-close-dialog>关闭</button></div></dialog>
+  <dialog id="camera-dialog"><form id="camera-form"><div class="dialog-head"><div><span class="eyebrow">CAMERA CONFIGURATION</span><h2 id="camera-dialog-title">新增摄像头</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="关闭">×</button></div><input id="camera-version" type="hidden"><div class="form-grid"><label>Camera ID<input id="camera-id" required pattern="[A-Za-z0-9_.\-]+"></label><label>名称<input id="camera-name" required></label><label>Camera Profile<select id="camera-profile" required></select></label><label>抽帧周期（毫秒）<input id="camera-interval" type="number" min="100" value="1000" required></label><label>输出模式<select id="camera-output"><option value="latest">latest</option><option value="archive">archive</option><option value="both">both</option></select></label><label>保留天数<input id="camera-retention" type="number" min="1" value="7" required></label><label class="check-inline"><input id="camera-enabled" type="checkbox" checked>启用并保持运行</label><label class="check-inline"><input id="analysis-enabled" type="checkbox" checked>启用车辆分析</label><label>目标推理 FPS<input id="analysis-fps" type="number" min="0.1" step="0.1" value="8" required></label><label>算法 Profile<input id="algorithm-profile" value="vehicle_default" required></label></div><div class="algorithm-list"><label class="check-inline"><input type="checkbox" name="algorithm" value="vehicle_detection" checked>车辆检测</label><label class="check-inline"><input type="checkbox" name="algorithm" value="vehicle_attribute" checked>车辆属性识别</label></div><p class="dialog-help">RTSP 地址、Token 和回调地址由部署配置解析，页面不接收或回显敏感信息。</p><div class="dialog-actions"><button class="button" type="button" data-close-dialog>取消</button><button class="button primary" type="submit">保存</button></div></form></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/camera-admin/app.js?v=20260826-workbench-v4" defer></script>
 </body>
 </html>

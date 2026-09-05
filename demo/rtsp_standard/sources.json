@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.1",
+  "license": {
+    "name": "Pexels License",
+    "url": "https://www.pexels.com/legal-pages/license/"
+  },
+  "segments": [
+    {
+      "range_seconds": [0, 12],
+      "scene": "\u6536\u8d39\u7ad9",
+      "targets": ["\u8fd1\u8ddd\u79bb\u8f66\u8f86", "\u8f66\u9053\u906e\u6321"],
+      "source_page": "https://www.pexels.com/video/nighttime-traffic-jam-at-city-toll-booth-35095187/",
+      "download": "https://videos.pexels.com/video-files/35095187/14867801_360_640_60fps.mp4",
+      "local_file": "sources/01_toll.mp4"
+    },
+    {
+      "range_seconds": [12, 24],
+      "scene": "\u56fa\u5b9a\u8def\u53e3",
+      "targets": ["\u591a\u76ee\u6807", "\u884c\u4eba\u5e72\u6270"],
+      "source_page": "https://www.pexels.com/video/busy-urban-intersection-with-traffic-and-pedestrians-30169860/",
+      "download": "https://videos.pexels.com/video-files/30169860/12937192_640_360_30fps.mp4",
+      "local_file": "sources/02_intersection.mp4"
+    },
+    {
+      "range_seconds": [24, 36],
+      "scene": "\u9ad8\u901f\u9053\u8def",
+      "targets": ["car", "bus", "truck"],
+      "source_page": "https://www.pexels.com/video/aerial-view-of-highway-traffic-with-trucks-and-bus-29740433/",
+      "download": "https://videos.pexels.com/video-files/29740433/12784279_1280_720_24fps.mp4",
+      "local_file": "sources/03_highway.mp4"
+    },
+    {
+      "range_seconds": [36, 48],
+      "scene": "\u590d\u6742\u591c\u95f4\u9ad8\u67b6\u4ea4\u901a",
+      "targets": ["\u5bc6\u96c6\u8f66\u8f86", "\u591c\u95f4\u706f\u5149", "\u5c3a\u5ea6\u53d8\u5316", "\u906e\u6321", "\u884c\u4eba\u5e72\u6270"],
+      "source_page": "https://www.pexels.com/video/nighttime-city-traffic-view-with-pedestrians-29901858/",
+      "download": "https://www.pexels.com/video/nighttime-city-traffic-view-with-pedestrians-29901858/",
+      "local_file": "sources/02_intersection_candidate.mp4"
+    },
+    {
+      "range_seconds": [48, 60],
+      "scene": "\u591c\u95f4\u9053\u8def",
+      "targets": ["\u591c\u95f4\u68c0\u6d4b", "\u706f\u5149", "\u6a21\u7cca"],
+      "source_page": "https://www.pexels.com/video/city-street-at-night-with-traffic-and-scooters-29491708/",
+      "download": "https://videos.pexels.com/video-files/29491708/12694440_640_360_30fps.mp4",
+      "local_file": "sources/05_night.mp4"
+    }
+  ]
+}

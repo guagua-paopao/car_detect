@@ -9,7 +9,6 @@
 namespace yolo11_server {
 
 inline constexpr const char* kCameraRunOriginCameraApi = "camera_api";
-inline constexpr const char* kCameraRunOriginPeopleFlowCompat = "people_flow_compat";
 
 struct CameraRunFrameOutputSpec {
     bool enabled = true;
@@ -28,24 +27,15 @@ struct CameraRunAnalysisSpec {
     std::string algorithm_profile;
     std::vector<std::string> algorithms;
     std::string config_version;
-    long long initial_occupancy = 0;
     int snapshot_fps = 0;
     std::string algorithm_parameters_json = "{}";
-};
-
-struct CameraRunCompatibilitySpec {
-    std::string legacy_session_id;
-    bool preserve_pf_projection = false;
-    int legacy_response_version = 0;
 };
 
 struct CameraRunSpecOptions {
     std::string origin = kCameraRunOriginCameraApi;
     std::string analysis_config_version;
-    long long initial_occupancy = 0;
     int snapshot_fps = 0;
     std::string algorithm_parameters_json = "{}";
-    CameraRunCompatibilitySpec compatibility;
 };
 
 // Immutable snapshot of one Camera execution. CameraTaskDefinition may change
@@ -66,9 +56,6 @@ public:
     const CameraRunAnalysisSpec& analysis() const noexcept { return analysis_; }
     const std::string& callbackProfile() const noexcept { return callback_profile_; }
     long long createTimeMs() const noexcept { return create_time_ms_; }
-    const CameraRunCompatibilitySpec& compatibility() const noexcept {
-        return compatibility_;
-    }
 
     std::string toDefinitionJson() const;
     CameraTaskRunRecord toRunRecord() const;
@@ -90,8 +77,7 @@ private:
         CameraRunFrameOutputSpec frame_output,
         CameraRunAnalysisSpec analysis,
         std::string callback_profile,
-        long long create_time_ms,
-        CameraRunCompatibilitySpec compatibility);
+        long long create_time_ms);
 
     const std::string run_id_;
     const std::string task_id_;
@@ -102,7 +88,6 @@ private:
     const CameraRunAnalysisSpec analysis_;
     const std::string callback_profile_;
     const long long create_time_ms_;
-    const CameraRunCompatibilitySpec compatibility_;
 };
 
 CameraRunSpec makeCameraRunSpec(

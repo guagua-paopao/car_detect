@@ -101,13 +101,13 @@ namespace yolo11_server {
         frame.capture_time_ms = latest->capture_time_ms;
         frame.publish_time = latest->publish_time;
         frame.resolution_changed = latest->resolution_changed;
-        frame.image = latest->image.clone();
+        frame.image = latest->bgrImage().clone();
         return !frame.image.empty();
     }
 
     SharedCameraFrame RtspCaptureReader::getLatestFrameShared(std::uint64_t after_sequence) const {
         const SharedCameraFrame latest = std::atomic_load(&latest_);
-        if (!latest || latest->sequence == 0 || latest->sequence <= after_sequence || latest->image.empty()) {
+        if (!latest || latest->sequence == 0 || latest->sequence <= after_sequence || !latest->valid()) {
             return {};
         }
         return latest;

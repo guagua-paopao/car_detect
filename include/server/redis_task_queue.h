@@ -7,7 +7,6 @@
 
 #include "server/algorithm_runtime_snapshot.h"
 
-#include "business/people_flow_types.h"
 #include "server/app_config.h"
 
 struct redisContext;
@@ -54,12 +53,6 @@ namespace yolo11_server {
         std::string snapshot_path;
         int snapshot_interval_frames = 5;
         int target_fps = 10;
-
-        // Phase 21 people-flow command fields.
-        std::string people_flow_session_id;
-        std::string people_flow_camera_id;
-        std::string people_flow_config_version;
-        long long initial_occupancy = 0;
 
         long long create_time_ms = 0;
     };
@@ -155,7 +148,6 @@ namespace yolo11_server {
         std::string stream_type;
         std::string runtime_mode;
         std::string worker_generation;
-        bool legacy_people_flow_role = false;
         bool camera_task_manager_running = false;
         bool hub_registry_ready = false;
         bool coordination_healthy = false;
@@ -247,66 +239,6 @@ namespace yolo11_server {
         bool resolution_changed = false;
         long long resolution_change_count = 0;
         long long update_time_ms = 0;
-    };
-
-    struct PeopleFlowStartRequest {
-        std::string session_id;
-        std::string camera_id;
-        std::string camera_profile;
-        std::string source_ref;
-        std::string masked_uri;
-        std::string config_version;
-        std::string snapshot_path;
-        long long initial_occupancy = 0;
-        long long create_time_ms = 0;
-        int active_ttl_seconds = 60;
-        int session_ttl_seconds = 604800;
-    };
-
-    struct PeopleFlowSessionStatus {
-        bool found = false;
-        std::string session_id;
-        std::string camera_id;
-        std::string camera_profile;
-        std::string masked_uri;
-        std::string config_version;
-        std::string status;
-        std::string snapshot_path;
-        std::string capture_state;
-        std::string capture_backend;
-        bool shared_hub = false;
-        std::string hub_instance_id;
-        int hub_subscribers = 0;
-        std::string consumer_name;
-        std::string error;
-        std::string last_error;
-        int worker_id = 0;
-        bool stop_requested = false;
-        bool storage_degraded = false;
-        bool snapshot_degraded = false;
-        bool resolution_changed = false;
-        long long create_time_ms = 0;
-        long long start_time_ms = 0;
-        long long stop_time_ms = 0;
-        long long last_update_ms = 0;
-        long long last_frame_time_ms = 0;
-        long long latest_frame_age_ms = -1;
-        long long frame_count = 0;
-        long long dropped_frames = 0;
-        long long event_queue_depth = 0;
-        long long in_count = 0;
-        long long out_count = 0;
-        long long initial_occupancy = 0;
-        long long occupancy = 0;
-        long long applied_calibration_version = 0;
-        int live_persons = 0;
-        int reconnect_count = 0;
-        int width = 0;
-        int height = 0;
-        double capture_fps = 0.0;
-        double infer_fps = 0.0;
-        double source_fps = 0.0;
-        double last_inference_ms = 0.0;
     };
 
     class RedisTaskQueue {
@@ -426,32 +358,6 @@ namespace yolo11_server {
         // several long-running camera/RTSP tasks for one stream worker.
         bool getActiveStreamTask(StreamTaskStatus& status, std::string& error) const;
 
-        // Phase 21 independent people-flow lifecycle and hot-state methods.
-        bool submitPeopleFlowTask(const PeopleFlowStartRequest& request, std::string& error) const;
-        bool updatePeopleFlowSession(const PeopleFlowSessionStatus& status, int session_ttl_seconds, int realtime_ttl_seconds, std::string& error) const;
-        bool getPeopleFlowSession(const std::string& session_id, PeopleFlowSessionStatus& status, std::string& error) const;
-        bool getPeopleFlowRealtime(const std::string& camera_id, PeopleFlowSessionStatus& status, std::string& error) const;
-        bool getActivePeopleFlowSession(const std::string& camera_id, std::string& session_id, std::string& error) const;
-        bool getLastPeopleFlowSession(const std::string& camera_id, std::string& session_id, std::string& error) const;
-        bool refreshPeopleFlowLease(const std::string& camera_id, const std::string& session_id, int ttl_seconds, std::string& error) const;
-        bool releasePeopleFlowLease(const std::string& camera_id, const std::string& session_id, std::string& error) const;
-        bool requestStopPeopleFlow(const std::string& session_id, std::string& error) const;
-        bool isPeopleFlowStopRequested(const std::string& session_id, bool& stop_requested, std::string& error) const;
-        bool appendPeopleFlowEvent(const CrossingEvent& event, int max_len, std::string& error) const;
-        bool requestPeopleFlowCalibration(
-            const std::string& camera_id,
-            const std::string& session_id,
-            long long occupancy,
-            long long& calibration_version,
-            std::string& error
-        ) const;
-        bool getPeopleFlowCalibrationRequest(
-            const std::string& camera_id,
-            long long& calibration_version,
-            long long& occupancy,
-            std::string& error
-        ) const;
-
         bool getTaskStatus(const std::string& task_id, RedisTaskStatus& status, std::string& error) const;
 
         bool popTask(RedisTask& task, std::string& error) const;
@@ -493,12 +399,6 @@ namespace yolo11_server {
         std::string streamTaskMetaKey(const std::string& stream_id) const;
         std::string streamTaskLatestKey(const std::string& stream_id) const;
         std::string activeStreamTaskKey() const;
-        std::string peopleFlowSessionKey(const std::string& session_id) const;
-        std::string peopleFlowActiveKey(const std::string& camera_id) const;
-        std::string peopleFlowLastKey(const std::string& camera_id) const;
-        std::string peopleFlowRealtimeKey(const std::string& camera_id) const;
-        std::string peopleFlowEventsKey(const std::string& camera_id) const;
-
     private:
         RedisSection config_;
 

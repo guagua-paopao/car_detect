@@ -12,12 +12,43 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Validate Qt and API workflow
-        run: python tools/qt_demo_contract_test.py
       - name: Validate Web Admin parity and security
         run: python tests/web_admin_contract_test.py
       - name: Validate vehicle M0 contracts
         run: python tests/vehicle_contract_test.py
+      - name: Validate vehicle M1 dataset contracts
+        run: python tests/dataset_manifest_contract_test.py
+      - name: Validate vehicle M2 model registry
+        run: python tests/model_registry_contract_test.py
+      - name: Validate vehicle M3 cascade contracts
+        run: python tests/vehicle_cascade_contract_test.py
+      - name: Validate vehicle M4 storage and API contracts
+        run: python tests/vehicle_storage_api_contract_test.py
+      - name: Validate vehicle M5 release gates
+        run: python tests/vehicle_release_contract_test.py
+      - name: Validate real TensorRT adapter sources
+        run: python tests/vehicle_tensorrt_source_contract_test.py
+      - name: Validate model delivery gates
+        run: |
+          python tests/model_delivery_contract_test.py
+          python tools/audit_model_delivery.py --allow-planned
+      - name: Compile vehicle M2 C++ contracts
+        shell: bash
+        run: |
+          g++ -std=c++17 -Wall -Wextra -pedantic -Iinclude \
+            tests/vehicle_model_contract_test.cpp \
+            src/server/vehicle_model_contract.cpp \
+            -o vehicle_model_contract_test
+          ./vehicle_model_contract_test
+      - name: Compile vehicle M3 cascade runtime
+        shell: bash
+        run: |
+          g++ -std=c++17 -Wall -Wextra -pedantic -Iinclude \
+            tests/vehicle_cascade_runtime_test.cpp \
+            src/server/vehicle_model_contract.cpp \
+            src/business/vehicle_cascade_runtime.cpp \
+            -o vehicle_cascade_runtime_test
+          ./vehicle_cascade_runtime_test
       - name: Validate PowerShell acceptance scripts
         shell: pwsh
         run: |

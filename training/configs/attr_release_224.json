@@ -1,0 +1,19 @@
+{
+  "experiment_id": "ATTR-RELEASE-224",
+  "architecture": "mobilenet_v3_large_multitask",
+  "input_size": 224,
+  "epochs": 80,
+  "batch_size": 64,
+  "learning_rate": 0.0003,
+  "weight_decay": 0.0001,
+  "color_loss_weight": 0.7,
+  "class_weighting": "inverse_sqrt",
+  "label_smoothing": 0.05,
+  "gradient_clip_norm": 5.0,
+  "patience": 16,
+  "type_threshold": 0.75,
+  "color_threshold": 0.70,
+  "workers": 8,
+  "seed": 20260728,
+  "amp": true
+}

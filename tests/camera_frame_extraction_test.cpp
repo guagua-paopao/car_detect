@@ -260,7 +260,6 @@ CameraTaskCommand makeCommand(const CameraTaskDefinition& task, const CameraTask
     command.algorithm_profile = task.algorithm_profile;
     command.algorithms = task.algorithms;
     command.analysis_config_version = "pipeline-r3-v1";
-    command.initial_occupancy = 5;
     command.snapshot_fps = 2;
     command.algorithm_parameters_json = R"({"line_id":"main"})";
     command.create_time_ms = run.create_time_ms;
@@ -300,8 +299,8 @@ int main() {
     auto slow_task = makeTask("ct_slow", 250, "archive", 100, stamp);
     slow_task.analysis_enabled = true;
     slow_task.target_infer_fps = 10.0;
-    slow_task.algorithm_profile = "security_default";
-    slow_task.algorithms = { "people_flow" };
+    slow_task.algorithm_profile = "vehicle_default";
+    slow_task.algorithms = { "vehicle_detection" };
     require(repository->createTask(fast_task, code, error), "fast task must persist");
     require(repository->createTask(slow_task, code, error), "slow task must persist");
     const auto fast_run = makeRun("cr_fast", fast_task, stamp + 1);
@@ -320,9 +319,9 @@ int main() {
             ++source_state->factory_calls;
             return std::make_unique<TimedFrameSource>(source_state);
         });
-    std::shared_ptr<FrameSubscription> people_flow;
-    require(registry->subscribe("entry_camera_01", { "pf_test", "people_flow" },
-        people_flow, error), "People Flow subscription must start the shared source");
+    std::shared_ptr<FrameSubscription> observer;
+    require(registry->subscribe("entry_camera_01", { "observer_test", "observer" },
+        observer, error), "observer subscription must start the shared source");
     auto control = std::make_shared<FakeControl>();
     auto inference_sink = std::make_shared<RecordingInferenceSink>();
     auto fast = std::make_shared<CameraPipeline>(
@@ -332,12 +331,12 @@ int main() {
         makeCommand(slow_task, slow_run), config, 500, "test_camera", registry,
         writer, repository, control, inference_sink);
 
-    std::atomic<bool> consume_people_flow{ true };
-    std::atomic<int> people_flow_frames{ 0 };
-    std::thread people_flow_thread([&]() {
-        while (consume_people_flow.load()) {
+    std::atomic<bool> consume_observer{ true };
+    std::atomic<int> observer_frames{ 0 };
+    std::thread observer_thread([&]() {
+        while (consume_observer.load()) {
             FrameReadResult result;
-            if (people_flow->tryReadLatest(result)) ++people_flow_frames;
+            if (observer->tryReadLatest(result)) ++observer_frames;
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
         }
     });
@@ -348,9 +347,9 @@ int main() {
     const auto live_hubs = registry->snapshots();
     require(live_hubs.size() == 1, "same profile must create one Hub");
     require(live_hubs.front().open_count == 1 && source_state->factory_calls.load() == 1 &&
-        source_state->opens.load() == 1, "People Flow and both runs must share one source open");
+        source_state->opens.load() == 1, "observer and both runs must share one source open");
     require(live_hubs.front().subscriber_count == 3,
-        "Hub must expose one People Flow and two Camera Task subscriptions");
+        "Hub must expose one observer and two Camera Task subscriptions");
     const auto fast_hot = control->status(fast_run.run_id);
     const auto slow_hot = control->status(slow_run.run_id);
     require(fast_hot.pipeline_thread_running && slow_hot.pipeline_thread_running &&
@@ -368,7 +367,6 @@ int main() {
         "analysis FrameJobs must be sampled near target FPS with strictly increasing source_sequence");
     const auto live_analysis_job = inference_sink->latest(slow_run.run_id);
     require(live_analysis_job.analysis_config_version == "pipeline-r3-v1" &&
-            live_analysis_job.initial_occupancy == 5 &&
             live_analysis_job.snapshot_fps == 2 &&
             live_analysis_job.algorithm_parameters_json == R"({"line_id":"main"})" &&
             live_analysis_job.capture_fps > 0.0,
@@ -392,7 +390,7 @@ int main() {
         std::ofstream blocking_file(root / "output" / "ct_bad", std::ios::binary);
         blocking_file << "not a directory";
     }
-    const int people_flow_before_failure = people_flow_frames.load();
+    const int observer_before_failure = observer_frames.load();
     auto bad = std::make_shared<CameraPipeline>(
         makeCommand(bad_task, bad_run), config, 500, "test_camera", registry,
         writer, repository, control);
@@ -403,13 +401,13 @@ int main() {
         bad_result.status == "failed" && bad_result.error_code == "OUTPUT_PATH_UNSAFE",
         "a task-local output failure must fail only that run");
     std::this_thread::sleep_for(std::chrono::milliseconds(120));
-    require(source_state->active.load() && people_flow_frames.load() > people_flow_before_failure,
-        "task-local write failure must not stop the shared Hub or People Flow cursor");
+    require(source_state->active.load() && observer_frames.load() > observer_before_failure,
+        "task-local write failure must not stop the shared Hub or observer cursor");
 
-    consume_people_flow.store(false);
-    people_flow_thread.join();
-    require(people_flow_frames.load() > 20,
-        "independent People Flow cursor must keep consuming while extraction writes");
+    consume_observer.store(false);
+    observer_thread.join();
+    require(observer_frames.load() > 20,
+        "independent observer cursor must keep consuming while extraction writes");
 
     CameraTaskRunRecord fast_result;
     CameraTaskRunRecord slow_result;
@@ -530,7 +528,7 @@ int main() {
         fast_frames.size() == 4,
         "rejected traversal metadata must remain for operator review instead of being hidden");
 
-    people_flow.reset();
+    observer.reset();
     for (int index = 0; index < 50 && source_state->active.load(); ++index) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }

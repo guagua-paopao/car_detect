@@ -1,0 +1,17 @@
+{
+  "record_id": "VCAS-LIC-OI-001",
+  "status": "approved",
+  "dataset": "Open Images V7",
+  "official_homepage": "https://storage.googleapis.com/openimages/web/index.html",
+  "license_reference": "https://github.com/openimages/dataset/blob/main/READMEV3.md",
+  "intended_use": "Noncommercial learning and reproducible VCAS training-pipeline validation",
+  "reviewed_by": "project_owner",
+  "reviewed_at": "2026-07-28",
+  "decision": "approved_noncommercial_learning_only",
+  "conditions": [
+    "Preserve Open Images IDs and attribution metadata",
+    "Do not redistribute image payloads from this repository",
+    "Re-review licensing before any use beyond the stated learning project"
+  ],
+  "notes": "Approved by the project owner for the VCAS noncommercial learning and training-pipeline validation scope. Any broader use requires a new review."
+}

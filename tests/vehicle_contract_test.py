@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "api" / "schemas" / "vehicle_event.v1.schema.json"
 EXAMPLE_PATH = ROOT / "api" / "examples" / "vehicle_passage.v1.json"
 CONFIG_PATH = ROOT / "config" / "vehicle_analytics.yaml"
+LABELS_PATH = ROOT / "config" / "vehicle_labels.v1.json"
 
 
 def load_json(path: Path) -> dict:
@@ -59,6 +60,7 @@ def main() -> None:
     # JSON is a valid YAML 1.2 subset. Keeping the M0 config JSON-compatible
     # gives CI a dependency-free parser while yaml-cpp can consume the file.
     config = load_json(CONFIG_PATH)
+    labels = load_json(LABELS_PATH)
 
     if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
         raise AssertionError("vehicle event schema must use JSON Schema 2020-12")
@@ -77,6 +79,19 @@ def main() -> None:
 
     body_labels = config["vehicle_analytics"]["body_types"]
     color_labels = config["vehicle_analytics"]["colors"]
+    if config["labels_version"] != labels["labels_version"]:
+        raise AssertionError("runtime config labels_version must match the canonical labels")
+    if body_labels != labels["body_types"] or color_labels != labels["colors"]:
+        raise AssertionError("runtime label lists must match the canonical labels")
+    versions = example["model_versions"]
+    if versions["config"] != config["config_version"]:
+        raise AssertionError("event example config version must match runtime config")
+    if versions["labels"] != labels["labels_version"]:
+        raise AssertionError("event example labels version must match canonical labels")
+    if versions["detector"] != config["models"]["vehicle_detector"]["artifact"]:
+        raise AssertionError("event detector version must match runtime model selection")
+    if versions["attribute"] != config["models"]["vehicle_attribute"]["artifact"]:
+        raise AssertionError("event attribute version must match runtime model selection")
     schema_body_labels = schema["$defs"]["body_type_classification"]["properties"]["label"]["enum"]
     schema_color_labels = schema["$defs"]["color_classification"]["properties"]["label"]["enum"]
     if body_labels != schema_body_labels:
@@ -107,6 +122,8 @@ def main() -> None:
     analytics = config["vehicle_analytics"]
     if not 0 < analytics["detection_fps"] <= 120:
         raise AssertionError("detection_fps must be in (0, 120]")
+    if not 0 < analytics["detection_confidence_threshold"] <= 1:
+        raise AssertionError("detection_confidence_threshold must be in (0, 1]")
     if analytics["min_confirm_hits"] < 1:
         raise AssertionError("min_confirm_hits must be positive")
     if not 0 < analytics["type_threshold"] <= 1:
@@ -128,6 +145,9 @@ def main() -> None:
         "docs/DECISIONS.md",
         "docs/TRACEABILITY.md",
         "docs/development/VCAS_M0_BASELINE.md",
+        "docs/development/VCAS_M1_DATA_SPEC.md",
+        "docs/development/VCAS_M2_MODEL_INTERFACES.md",
+        "docs/development/VCAS_M3_CASCADE_RUNTIME.md",
     ):
         if not (ROOT / relative).is_file():
             raise AssertionError(f"missing traceability document: {relative}")

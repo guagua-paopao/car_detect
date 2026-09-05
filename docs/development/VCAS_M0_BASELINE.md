@@ -29,7 +29,7 @@
 
 基线导入时执行：
 
-- Python Qt/API 契约测试：通过
+- Python Web/API 契约测试：通过
 - Web Admin 契约测试：通过
 - PowerShell 脚本语法检查：通过
 - Markdown 相对链接检查：通过

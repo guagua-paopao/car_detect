@@ -71,21 +71,25 @@ if ($LASTEXITCODE -ne 0) { throw "Backend CMake configure failed" }
 
 $build = @("--build", $BuildPath, "--config", "Release", "--target",
     "four_stage_server", "four_stage_worker",
-    "camera_task_redis",
-    "app_config_runtime_test", "people_flow_core_test", "security_analytics_test", "repository_test",
-    "shared_camera_frame_hub_test", "people_flow_hub_regression_test",
+    "camera_task_redis", "runtime_redis",
+    "app_config_runtime_test", "shared_camera_frame_hub_test",
     "camera_task_manager_test", "camera_run_spec_test",
-    "camera_inference_pool_test", "camera_algorithm_processor_test",
+    "camera_inference_pool_test", "analysis_snapshot_writer_test",
     "callback_delivery_worker_test", "callback_http_transport_test",
     "algorithm_runtime_heartbeat_test", "worker_runtime_readiness_test",
     "camera_task_lease_fence_test",
-    "algorithm_service_integration_test",
     "camera_task_repository_test",
+    "vehicle_event_repository_test",
     "camera_frame_extraction_test", "camera_storage_policy_test", "camera_frame_resilience_test",
     "camera_task_http_contract_test",
-    "people_flow_compatibility_contract_test",
-    "pose_engine_smoke", "pose_engine_benchmark",
-    "rtsp_capture_smoke", "pose_rtsp_interop_smoke")
+    "vehicle_tensorrt_adapter_contract_test",
+    "vehicle_model_contract_test", "vehicle_tensorrt_real_engine_test",
+    "vehicle_best_models_real_engine_test",
+    "vehicle_gpu_pipeline_parity_test", "vehicle_tensorrt_benchmark",
+    "vehicle_attribute_gpu_benchmark",
+    "vehicle_multistream_benchmark",
+    "vehicle_cascade_runtime_test", "vehicle_attribute_batch_scheduler_test",
+    "rtsp_capture_smoke")
 if ($CleanFirst) { $build += "--clean-first" }
 & $CMakeExe @build
 if ($LASTEXITCODE -ne 0) { throw "Backend build failed" }

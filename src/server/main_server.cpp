@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <exception>
 #include <iostream>
 #include <string>
@@ -14,7 +15,7 @@
 
 #include "server/app_config.h"
 #include "server/app_logger.h"
-#include "server/people_flow_http_server.h"
+#include "server/vision_http_server.h"
 
 int main(int argc, char** argv) {
 #ifdef _WIN32
@@ -24,13 +25,18 @@ int main(int argc, char** argv) {
     int result = 0;
     try {
         const std::string config_path = argc > 1 ? argv[1] : "config/server.yaml";
-        const auto config = yolo11_server::AppConfig::loadFromYaml(config_path);
+        auto config = yolo11_server::AppConfig::loadFromYaml(config_path);
+        const char* disable_analysis =
+            std::getenv("YOLO11_DEMO_DISABLE_ANALYSIS");
+        if (disable_analysis && std::string(disable_analysis) == "1") {
+            config.analysis.enabled = false;
+        }
         std::cerr << "[BOOT] server configuration loaded\n";
         std::string logger_error;
         yolo11_server::initializeLogger(config, "server", logger_error);
         std::cerr << "[BOOT] server logger initialized\n";
 
-        yolo11_server::PeopleFlowHttpServer controller(config);
+        yolo11_server::VisionHttpServer controller(config);
         std::cerr << "[BOOT] server controller constructed\n";
         std::string error;
         if (!controller.initialize(error)) {
@@ -41,7 +47,7 @@ int main(int argc, char** argv) {
         crow::SimpleApp app;
         app.loglevel(crow::LogLevel::Warning);
         controller.registerRoutes(app);
-        spdlog::info("Four-stage HTTP server: http://{}:{}", config.server.host, config.server.port);
+        spdlog::info("Car Detect HTTP server: http://{}:{}", config.server.host, config.server.port);
         app.bindaddr(config.server.host)
             .port(static_cast<uint16_t>(config.server.port))
             .concurrency(static_cast<unsigned int>(config.server.threads))

@@ -72,11 +72,9 @@ function Test-SubscriberContract([object]$Hub) {
     }
     if ($RequireUnifiedCameraPipeline) {
         return [int]$Hub.subscriber_types.camera_pipeline -ge 1 -and
-            [int]$Hub.subscriber_types.people_flow -eq 0 -and
             [int]$Hub.subscriber_types.camera_task -eq 0
     }
-    return [int]$Hub.subscriber_types.people_flow -ge 1 -and
-        [int]$Hub.subscriber_types.camera_task -ge 1
+    return [int]$Hub.subscriber_types.camera_task -ge 1
 }
 
 try {

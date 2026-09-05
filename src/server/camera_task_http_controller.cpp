@@ -24,8 +24,10 @@
 #include <fstream>
 #include <iomanip>
 #include <iterator>
+#include <limits>
 #include <set>
 #include <sstream>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -90,6 +92,17 @@ std::string publicError(const std::string& code) {
     if (code == "INVALID_IDEMPOTENCY_KEY") return "Idempotency-Key is invalid";
     if (code == "IDEMPOTENCY_CONFLICT") return "Idempotency-Key was already used for a different request";
     if (code == "ALERT_NOT_FOUND") return "alert was not found";
+    if (code == "VEHICLE_EVENT_NOT_FOUND") return "vehicle event was not found";
+    if (code == "VEHICLE_SNAPSHOT_NOT_READY") {
+        return "vehicle snapshot is not ready";
+    }
+    if (code == "VEHICLE_REALTIME_UNAVAILABLE") {
+        return "vehicle realtime state is unavailable";
+    }
+    if (code == "MODEL_STATUS_UNAVAILABLE") {
+        return "vehicle model status is unavailable";
+    }
+    if (code == "INVALID_TIME_RANGE") return "event time range is invalid";
     if (code == "CALLBACK_OUTBOX_NOT_FOUND") return "callback delivery was not found";
     if (code == "CALLBACK_REPLAY_CONFLICT") return "callback delivery status or attempt changed";
     if (code == "INVALID_CALLBACK_REPLAY") return "callback replay request is invalid";
@@ -109,6 +122,17 @@ bool safeIdentifier(const std::string& value, const std::string& prefix = {}) {
         return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
             (ch >= '0' && ch <= '9') || ch == '_' || ch == '-';
     });
+}
+
+bool sha256Hex(const json& value) {
+    if (!value.is_string()) return false;
+    const auto digest = value.get<std::string>();
+    return digest.size() == 64 &&
+        std::all_of(digest.begin(), digest.end(), [](unsigned char ch) {
+            return (ch >= '0' && ch <= '9') ||
+                (ch >= 'a' && ch <= 'f') ||
+                (ch >= 'A' && ch <= 'F');
+        });
 }
 
 bool constantTimeEqual(const std::string& left, const std::string& right) {
@@ -332,6 +356,25 @@ int queryInt(const crow::request& request, const char* name, int fallback, int m
     catch (...) { return fallback; }
 }
 
+long long queryInt64(
+    const crow::request& request,
+    const char* name,
+    long long fallback,
+    long long minimum,
+    long long maximum) {
+    const char* value = request.url_params.get(name);
+    if (!value) return fallback;
+    try {
+        std::size_t consumed = 0;
+        const long long parsed = std::stoll(value, &consumed);
+        if (consumed != std::string(value).size()) return fallback;
+        return std::clamp(parsed, minimum, maximum);
+    }
+    catch (...) {
+        return fallback;
+    }
+}
+
 bool queryBool(const crow::request& request, const char* name, bool fallback, bool& present) {
     const char* value = request.url_params.get(name);
     present = value != nullptr;
@@ -379,6 +422,84 @@ json alertJson(const SecurityAlertEventRecord& alert) {
         {"evidence", evidence}, {"payload", payload},
         {"delivery", {{"status", alert.delivery_status}}},
         {"created_at_ms", alert.created_at_ms}
+    };
+}
+
+json vehicleResultJson(const VehicleTrackResultRecord& result) {
+    json evidence = {
+        {"crop_quality", result.crop_quality}
+    };
+    if (!result.snapshot_relative_path.empty()) {
+        evidence["snapshot_url"] =
+            "/api/v1/vehicle-events/" + result.event_id + "/snapshot";
+    }
+    if (!result.evidence_frame_id.empty()) {
+        evidence["frame_id"] = result.evidence_frame_id;
+    }
+    return {
+        {"schema_version", "1.0"},
+        {"event_id", result.event_id},
+        {"event_kind", "vehicle_passage"},
+        {"camera_id", result.camera_id},
+        {"run_id", result.run_id},
+        {"track_id", result.track_id},
+        {"occurred_at_ms", result.occurred_at_ms},
+        {"vehicle_class", {
+            {"label", result.vehicle_class},
+            {"confidence", result.vehicle_class_confidence}
+        }},
+        {"attributes", {
+            {"body_type", {
+                {"label", result.body_type},
+                {"confidence", result.body_type_confidence},
+                {"stable", result.body_type_stable},
+                {"samples_used", result.body_type_samples_used}
+            }},
+            {"color", {
+                {"label", result.color},
+                {"confidence", result.color_confidence},
+                {"stable", result.color_stable},
+                {"samples_used", result.color_samples_used}
+            }}
+        }},
+        {"model_versions", {
+            {"detector", result.detector_artifact},
+            {"attribute", result.attribute_artifact},
+            {"labels", result.labels_version},
+            {"config", result.config_version}
+        }},
+        {"evidence", std::move(evidence)},
+        {"delivery", {{"status", result.delivery_status}}},
+        {"created_at_ms", result.created_at_ms}
+    };
+}
+
+json vehicleRealtimeJson(const VehicleRealtimeTrackRecord& track) {
+    return {
+        {"camera_id", track.camera_id},
+        {"run_id", track.run_id},
+        {"run_generation", track.run_generation},
+        {"track_id", track.track_id},
+        {"state", track.state},
+        {"last_seen_at_ms", track.last_seen_at_ms},
+        {"vehicle_class", {
+            {"label", track.vehicle_class},
+            {"confidence", track.vehicle_class_confidence}
+        }},
+        {"attributes", {
+            {"body_type", {
+                {"label", track.body_type},
+                {"confidence", track.body_type_confidence},
+                {"stable", track.body_type_stable},
+                {"samples_used", track.body_type_samples_used}
+            }},
+            {"color", {
+                {"label", track.color},
+                {"confidence", track.color_confidence},
+                {"stable", track.color_stable},
+                {"samples_used", track.color_samples_used}
+            }}
+        }}
     };
 }
 
@@ -433,7 +554,11 @@ json algorithmRuntimeJson(
             {"replaced_jobs", runtime.inference_replaced_jobs},
             {"processed_jobs", runtime.inference_processed_jobs},
             {"failed_jobs", runtime.inference_failed_jobs},
-            {"stale_results", runtime.inference_stale_results}
+            {"stale_results", runtime.inference_stale_results},
+            {"pending_result_jobs", runtime.inference_pending_result_jobs},
+            {"maximum_pending_result_jobs",
+                runtime.inference_maximum_pending_result_jobs},
+            {"handled_result_jobs", runtime.inference_handled_result_jobs}
         }},
         {"processor", {
             {"running", runtime.processor_running},
@@ -442,6 +567,30 @@ json algorithmRuntimeJson(
             {"persisted_alerts", runtime.processor_persisted_alerts},
             {"duplicate_alerts", runtime.processor_duplicate_alerts},
             {"failed_frames", runtime.processor_failed_frames}
+        }},
+        {"attribute_scheduler", {
+            {"running", runtime.attribute_scheduler_running},
+            {"requests", runtime.attribute_scheduler_requests},
+            {"completed_requests",
+                runtime.attribute_scheduler_completed_requests},
+            {"failed_requests", runtime.attribute_scheduler_failed_requests},
+            {"batches", runtime.attribute_scheduler_batches},
+            {"crops", runtime.attribute_scheduler_crops},
+            {"pending_requests",
+                runtime.attribute_scheduler_pending_requests},
+            {"maximum_pending_requests",
+                runtime.attribute_scheduler_maximum_pending_requests},
+            {"pending_crops", runtime.attribute_scheduler_pending_crops},
+            {"maximum_pending_crops",
+                runtime.attribute_scheduler_maximum_pending_crops},
+            {"mean_queue_wait_ms",
+                runtime.attribute_scheduler_mean_queue_wait_ms},
+            {"p95_queue_wait_ms",
+                runtime.attribute_scheduler_p95_queue_wait_ms},
+            {"p99_queue_wait_ms",
+                runtime.attribute_scheduler_p99_queue_wait_ms},
+            {"maximum_queue_wait_ms",
+                runtime.attribute_scheduler_maximum_queue_wait_ms}
         }},
         {"callbacks", {
             {"configured", runtime.callbacks_configured},
@@ -575,11 +724,13 @@ CameraTaskHttpController::CameraTaskHttpController(
     std::string token_override,
     std::shared_ptr<CameraProfileRegistry> profile_registry,
     AlgorithmRuntimeSnapshotReader algorithm_runtime_reader,
-    std::shared_ptr<UnifiedCameraApplicationService> application_service
+    std::shared_ptr<UnifiedCameraApplicationService> application_service,
+    VehicleRealtimeSnapshotReader vehicle_realtime_reader
 ) : config_(config), repository_(std::move(repository)), control_(std::move(control)),
     profile_registry_(std::move(profile_registry)),
     application_service_(std::move(application_service)),
     algorithm_runtime_reader_(std::move(algorithm_runtime_reader)),
+    vehicle_realtime_reader_(std::move(vehicle_realtime_reader)),
     token_(std::move(token_override)) {
 }
 
@@ -653,6 +804,26 @@ void CameraTaskHttpController::registerRoutes(crow::SimpleApp& app) {
         [this](const crow::request& request, const std::string& id) { return listRuns(request, id); });
     CROW_ROUTE(app, "/api/v1/cameras/<string>/alerts")(
         [this](const crow::request& request, const std::string& id) { return listAlerts(request, id); });
+    CROW_ROUTE(app, "/api/v1/cameras/<string>/vehicles/realtime")(
+        [this](const crow::request& request, const std::string& id) {
+            return vehicleRealtime(request, id);
+        });
+    CROW_ROUTE(app, "/api/v1/cameras/<string>/vehicle-events")(
+        [this](const crow::request& request, const std::string& id) {
+            return listVehicleEvents(request, id);
+        });
+    CROW_ROUTE(app, "/api/v1/vehicle-events/<string>")(
+        [this](const crow::request& request, const std::string& id) {
+            return getVehicleEvent(request, id);
+        });
+    CROW_ROUTE(app, "/api/v1/vehicle-events/<string>/snapshot")(
+        [this](const crow::request& request, const std::string& id) {
+            return vehicleEventSnapshot(request, id);
+        });
+    CROW_ROUTE(app, "/api/v1/models/status")(
+        [this](const crow::request& request) {
+            return vehicleModelStatus(request);
+        });
     CROW_ROUTE(app, "/api/v1/camera-hubs")(
         [this](const crow::request& request) { return listHubs(request); });
     CROW_ROUTE(app, "/api/v1/camera-hubs/<string>")(
@@ -1295,10 +1466,10 @@ crow::response CameraTaskHttpController::taskStatus(
     const bool analysis_stale = !hot_ok || hot.analysis_last_update_ms <= 0 ||
         nowMs() - hot.analysis_last_update_ms >
             std::max(5000, config_.camera_hub.status_update_interval_ms * 3);
-    auto security_state = hot_ok
-        ? json::parse(hot.security_state_json, nullptr, false)
+    auto analysis_state = hot_ok
+        ? json::parse(hot.analysis_state_json, nullptr, false)
         : json(nullptr);
-    if (security_state.is_discarded()) security_state = json::object();
+    if (analysis_state.is_discarded()) analysis_state = json::object();
     const long long pipeline_started_at_ms = hot_ok && hot.pipeline_started_at_ms > 0
         ? hot.pipeline_started_at_ms : run.start_time_ms;
     const long long pipeline_thread_age_ms = pipeline_started_at_ms > 0
@@ -1346,11 +1517,6 @@ crow::response CameraTaskHttpController::taskStatus(
             {"infer_fps", hot_ok ? hot.infer_fps : 0.0},
             {"last_inference_ms", hot_ok ? hot.last_inference_ms : 0.0},
             {"frame_count", hot_ok ? hot.analysis_frame_count : 0},
-            {"initial_occupancy", hot_ok ? hot.initial_occupancy : 0},
-            {"in_count", hot_ok ? hot.in_count : 0},
-            {"out_count", hot_ok ? hot.out_count : 0},
-            {"occupancy", hot_ok ? hot.occupancy : 0},
-            {"live_persons", hot_ok ? hot.live_persons : 0},
             {"reconnect_count", hot_ok ? hot.analysis_reconnect_count : 0},
             {"warmup_frames_remaining", hot_ok ? hot.warmup_frames_remaining : 0},
             {"snapshot_relative_path", hot_ok
@@ -1360,7 +1526,7 @@ crow::response CameraTaskHttpController::taskStatus(
             {"storage_degraded", hot_ok && hot.analysis_storage_degraded},
             {"snapshot_degraded", hot_ok && hot.analysis_snapshot_degraded},
             {"last_update_ms", hot_ok ? hot.analysis_last_update_ms : 0},
-            {"security", security_state}
+            {"results", analysis_state}
         }},
         {"error_code", hot_ok ? hot.error_code : run.error_code},
         {"error", (hot_ok ? hot.error_code : run.error_code).empty()
@@ -1473,16 +1639,24 @@ crow::response CameraTaskHttpController::analysisSnapshot(
         return errorResponse(
             404, "ANALYSIS_SNAPSHOT_NOT_READY", request_id);
     }
-    std::ifstream input(resolved, std::ios::binary);
     std::string bytes;
-    bytes.assign(
-        std::istreambuf_iterator<char>(input),
-        std::istreambuf_iterator<char>());
-    if (bytes.size() < 4 ||
-        static_cast<unsigned char>(bytes[0]) != 0xff ||
-        static_cast<unsigned char>(bytes[1]) != 0xd8 ||
-        static_cast<unsigned char>(bytes[bytes.size() - 2]) != 0xff ||
-        static_cast<unsigned char>(bytes.back()) != 0xd9) {
+    bool complete_jpeg = false;
+    for (int attempt = 0; attempt < 5 && !complete_jpeg; ++attempt) {
+        bytes.clear();
+        std::ifstream input(resolved, std::ios::binary);
+        bytes.assign(
+            std::istreambuf_iterator<char>(input),
+            std::istreambuf_iterator<char>());
+        complete_jpeg = bytes.size() >= 4 &&
+            static_cast<unsigned char>(bytes[0]) == 0xff &&
+            static_cast<unsigned char>(bytes[1]) == 0xd8 &&
+            static_cast<unsigned char>(bytes[bytes.size() - 2]) == 0xff &&
+            static_cast<unsigned char>(bytes.back()) == 0xd9;
+        if (!complete_jpeg && attempt < 4) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(8));
+        }
+    }
+    if (!complete_jpeg) {
         return errorResponse(
             404, "ANALYSIS_SNAPSHOT_NOT_READY", request_id);
     }
@@ -1554,6 +1728,249 @@ crow::response CameraTaskHttpController::listAlerts(
         {"items", items}, {"limit", limit}, {"offset", offset},
         {"minimum_severity", minimum_severity},
         {"event_type", event_type.empty() ? json(nullptr) : json(event_type)}
+    });
+}
+
+crow::response CameraTaskHttpController::vehicleRealtime(
+    const crow::request& request,
+    const std::string& task_id
+) const {
+    const std::string request_id = makeId("req_");
+    if (!authorized(request)) {
+        return errorResponse(401, "UNAUTHORIZED", request_id);
+    }
+    if (!safeIdentifier(task_id)) {
+        return errorResponse(400, "INVALID_IDENTIFIER", request_id);
+    }
+    CameraTaskDefinition task;
+    bool found = false;
+    std::string error;
+    if (!repository_->getTask(task_id, false, task, found, error)) {
+        return errorResponse(503, "STORAGE_UNAVAILABLE", request_id);
+    }
+    if (!found) return errorResponse(404, "TASK_NOT_FOUND", request_id);
+
+    std::vector<VehicleRealtimeTrackRecord> tracks;
+    long long generated_at_ms = 0;
+    if (!vehicle_realtime_reader_) {
+        return jsonResponse(200, {
+            {"success", true},
+            {"request_id", request_id},
+            {"camera_id", task_id},
+            {"available", false},
+            {"generated_at_ms", 0},
+            {"items", json::array()}
+        });
+    }
+    if (!vehicle_realtime_reader_(
+            task_id, tracks, generated_at_ms, error)) {
+        return errorResponse(
+            503, "VEHICLE_REALTIME_UNAVAILABLE", request_id);
+    }
+    json items = json::array();
+    for (const auto& track : tracks) {
+        if (track.camera_id == task_id) {
+            items.push_back(vehicleRealtimeJson(track));
+        }
+    }
+    return jsonResponse(200, {
+        {"success", true},
+        {"request_id", request_id},
+        {"camera_id", task_id},
+        {"available", true},
+        {"generated_at_ms", generated_at_ms},
+        {"items", std::move(items)}
+    });
+}
+
+crow::response CameraTaskHttpController::listVehicleEvents(
+    const crow::request& request,
+    const std::string& task_id
+) const {
+    const std::string request_id = makeId("req_");
+    if (!authorized(request)) {
+        return errorResponse(401, "UNAUTHORIZED", request_id);
+    }
+    if (!safeIdentifier(task_id)) {
+        return errorResponse(400, "INVALID_IDENTIFIER", request_id);
+    }
+    CameraTaskDefinition task;
+    bool found = false;
+    std::string error;
+    if (!repository_->getTask(task_id, false, task, found, error)) {
+        return errorResponse(503, "STORAGE_UNAVAILABLE", request_id);
+    }
+    if (!found) return errorResponse(404, "TASK_NOT_FOUND", request_id);
+    const int limit = queryInt(request, "limit", 20, 1, 200);
+    const int offset = queryInt(request, "offset", 0, 0, 1000000);
+    const long long from_ms = queryInt64(
+        request, "occurred_from_ms", 0, 0,
+        std::numeric_limits<long long>::max());
+    const long long to_ms = queryInt64(
+        request, "occurred_to_ms", 0, 0,
+        std::numeric_limits<long long>::max());
+    if (to_ms > 0 && from_ms > to_ms) {
+        return errorResponse(400, "INVALID_TIME_RANGE", request_id);
+    }
+    std::vector<VehicleTrackResultRecord> results;
+    if (!repository_->listVehicleEvents(
+            task_id, from_ms, to_ms, limit, offset, results, error)) {
+        return errorResponse(503, "STORAGE_UNAVAILABLE", request_id);
+    }
+    json items = json::array();
+    for (const auto& result : results) {
+        items.push_back(vehicleResultJson(result));
+    }
+    return jsonResponse(200, {
+        {"success", true},
+        {"request_id", request_id},
+        {"camera_id", task_id},
+        {"occurred_from_ms", from_ms == 0 ? json(nullptr) : json(from_ms)},
+        {"occurred_to_ms", to_ms == 0 ? json(nullptr) : json(to_ms)},
+        {"limit", limit},
+        {"offset", offset},
+        {"items", std::move(items)}
+    });
+}
+
+crow::response CameraTaskHttpController::getVehicleEvent(
+    const crow::request& request,
+    const std::string& event_id
+) const {
+    const std::string request_id = makeId("req_");
+    if (!authorized(request)) {
+        return errorResponse(401, "UNAUTHORIZED", request_id);
+    }
+    if (!safeIdentifier(event_id)) {
+        return errorResponse(400, "INVALID_IDENTIFIER", request_id);
+    }
+    VehicleTrackResultRecord result;
+    bool found = false;
+    std::string error;
+    if (!repository_->getVehicleEvent(event_id, result, found, error)) {
+        return errorResponse(503, "STORAGE_UNAVAILABLE", request_id);
+    }
+    if (!found) {
+        return errorResponse(404, "VEHICLE_EVENT_NOT_FOUND", request_id);
+    }
+    return jsonResponse(200, {
+        {"success", true},
+        {"request_id", request_id},
+        {"event", vehicleResultJson(result)}
+    });
+}
+
+crow::response CameraTaskHttpController::vehicleEventSnapshot(
+    const crow::request& request,
+    const std::string& event_id
+) const {
+    const std::string request_id = makeId("req_");
+    if (!authorized(request)) {
+        return errorResponse(401, "UNAUTHORIZED", request_id);
+    }
+    if (!safeIdentifier(event_id)) {
+        return errorResponse(400, "INVALID_IDENTIFIER", request_id);
+    }
+    VehicleTrackResultRecord result;
+    bool found = false;
+    std::string error;
+    if (!repository_->getVehicleEvent(event_id, result, found, error)) {
+        return errorResponse(503, "STORAGE_UNAVAILABLE", request_id);
+    }
+    if (!found) {
+        return errorResponse(404, "VEHICLE_EVENT_NOT_FOUND", request_id);
+    }
+    std::filesystem::path resolved;
+    if (!resolveCameraArtifact(
+            config_.camera_tasks.output_dir,
+            result.snapshot_relative_path,
+            resolved)) {
+        return errorResponse(
+            404, "VEHICLE_SNAPSHOT_NOT_READY", request_id);
+    }
+    std::ifstream input(resolved, std::ios::binary);
+    std::string bytes;
+    bytes.assign(
+        std::istreambuf_iterator<char>(input),
+        std::istreambuf_iterator<char>());
+    if (bytes.size() < 4 ||
+        static_cast<unsigned char>(bytes[0]) != 0xff ||
+        static_cast<unsigned char>(bytes[1]) != 0xd8 ||
+        static_cast<unsigned char>(bytes[bytes.size() - 2]) != 0xff ||
+        static_cast<unsigned char>(bytes.back()) != 0xd9) {
+        return errorResponse(
+            404, "VEHICLE_SNAPSHOT_NOT_READY", request_id);
+    }
+    crow::response response(200, std::move(bytes));
+    response.set_header("Content-Type", "image/jpeg");
+    response.set_header("Cache-Control", "no-store");
+    return response;
+}
+
+crow::response CameraTaskHttpController::vehicleModelStatus(
+    const crow::request& request
+) const {
+    const std::string request_id = makeId("req_");
+    if (!authorized(request)) {
+        return errorResponse(401, "UNAUTHORIZED", request_id);
+    }
+    if (!config_.vehicle_analytics.enabled) {
+        return jsonResponse(200, {
+            {"success", true},
+            {"request_id", request_id},
+            {"enabled", false},
+            {"all_ready", false},
+            {"items", json::array()}
+        });
+    }
+    std::ifstream input(
+        std::filesystem::u8path(
+            config_.vehicle_analytics.model_registry_path),
+        std::ios::binary);
+    json registry;
+    try {
+        input >> registry;
+    }
+    catch (...) {
+        return errorResponse(
+            503, "MODEL_STATUS_UNAVAILABLE", request_id);
+    }
+    if (!registry.is_object() || !registry["artifacts"].is_array()) {
+        return errorResponse(
+            503, "MODEL_STATUS_UNAVAILABLE", request_id);
+    }
+    json items = json::array();
+    bool all_ready = true;
+    for (const auto& artifact : registry["artifacts"]) {
+        const std::string status =
+            artifact.value("delivery_status", "planned");
+        const auto files = artifact.value("files", json::object());
+        const auto deployment =
+            artifact.value("deployment", json::object());
+        const bool ready =
+            (status == "engine_validated" || status == "deployed") &&
+            files.contains("engine_sha256") &&
+            sha256Hex(files["engine_sha256"]);
+        all_ready = all_ready && ready;
+        items.push_back({
+            {"artifact_id", artifact.value("artifact_id", "")},
+            {"role", artifact.value("role", "")},
+            {"delivery_status", status},
+            {"backend", deployment.value("backend", "")},
+            {"precision", deployment.value("precision", "")},
+            {"onnx_sha256", files.value("onnx_sha256", json(nullptr))},
+            {"engine_sha256", files.value("engine_sha256", json(nullptr))},
+            {"ready", ready}
+        });
+    }
+    return jsonResponse(200, {
+        {"success", true},
+        {"request_id", request_id},
+        {"enabled", true},
+        {"registry_version", registry.value("registry_version", "")},
+        {"labels_version", registry.value("labels_version", "")},
+        {"all_ready", all_ready && !items.empty()},
+        {"items", std::move(items)}
     });
 }
 
@@ -1979,6 +2396,13 @@ crow::response CameraTaskHttpController::operationsMetrics(const crow::request& 
             {"latest_capture_time_ms", stats.latest_frame_time_ms}
         }},
         {"alerts", {{"total", stats.alerts_total}}},
+        {"vision_events", {
+            {"total", stats.vision_events_total},
+            {"vehicle_passage", stats.vehicle_events_total}
+        }},
+        {"vehicle_observations", {
+            {"retained", stats.vehicle_observations_total}
+        }},
         {"callback_outbox", {
             {"pending", stats.callbacks_pending},
             {"delivering", stats.callbacks_delivering},
@@ -2063,6 +2487,13 @@ crow::response CameraTaskHttpController::prometheusMetrics(const crow::request& 
            << "yolo11_camera_archive_frames " << stats.frames_total << '\n'
            << "# TYPE yolo11_security_alert_events gauge\n"
            << "yolo11_security_alert_events " << stats.alerts_total << '\n'
+           << "# TYPE yolo11_vision_events gauge\n"
+           << "yolo11_vision_events " << stats.vision_events_total << '\n'
+           << "# TYPE yolo11_vehicle_events gauge\n"
+           << "yolo11_vehicle_events " << stats.vehicle_events_total << '\n'
+           << "# TYPE yolo11_vehicle_observations gauge\n"
+           << "yolo11_vehicle_observations "
+           << stats.vehicle_observations_total << '\n'
            << "# TYPE yolo11_callback_outbox gauge\n"
            << "yolo11_callback_outbox{state=\"pending\"} "
            << stats.callbacks_pending << '\n'

@@ -4,12 +4,10 @@ param(
     [string]$BuildDir = ".\out\build\backend-Release",
     [string]$ServerConfig = ".\config\server.yaml",
     [string]$WorkerConfig = ".\config\worker.yaml",
-    [string]$QtBuildDir = ".\out\build\qt-client-Release",
     [string]$CudaRoot = "D:\GPU13.3",
     [string]$TensorRtRoot = "D:\TensorRT-10.16.1.11",
     [string]$OpenCvBin = "D:\libs\opencv\build\x64\vc16\bin",
-    [int]$ReadyTimeoutSeconds = 40,
-    [switch]$SkipQt
+    [int]$ReadyTimeoutSeconds = 40
 )
 
 $ErrorActionPreference = "Stop"
@@ -81,7 +79,7 @@ foreach ($configPath in @($serverConfigPath, $workerConfigPath)) {
 $pidDir = Join-Path $ProjectRoot "runtime\pids"
 $logDir = Join-Path $ProjectRoot "runtime\logs\process"
 New-Item -ItemType Directory -Force -Path $pidDir, $logDir,
-    (Join-Path $ProjectRoot "runtime\output\people_flow"),
+    (Join-Path $ProjectRoot "runtime\output\vehicles"),
     (Join-Path $ProjectRoot "runtime\output\camera_frames"),
     (Join-Path $ProjectRoot "runtime\data") | Out-Null
 
@@ -95,7 +93,7 @@ function Start-LoggedProcess([string]$Name, [string]$Exe, [string[]]$Arguments) 
 
 $processes = @()
 $processes += Start-LoggedProcess "worker" $workerExe @(
-    $workerConfigPath, "--consumer-name", "people_flow_worker_1")
+    $workerConfigPath, "--consumer-name", "car_detect_worker_1")
 Start-Sleep -Seconds 2
 $processes += Start-LoggedProcess "server" $serverExe @($serverConfigPath)
 
@@ -117,14 +115,6 @@ if (-not $ready) {
     throw "Backend did not become ready. Inspect runtime\logs\process."
 }
 
-if (-not $SkipQt) {
-    $qtExe = Join-Path ([IO.Path]::GetFullPath((Join-Path $ProjectRoot $QtBuildDir))) "people_flow_qt_client.exe"
-    if (-not (Test-Path -LiteralPath $qtExe)) { throw "Qt client missing: $qtExe" }
-    $qt = Start-Process -FilePath $qtExe -ArgumentList @("--base-url", "http://127.0.0.1:8087") `
-        -WorkingDirectory (Split-Path $qtExe) -PassThru
-    $processes += [ordered]@{ name="qt"; pid=$qt.Id }
-}
-
 $pidFile = Join-Path $pidDir "demo.json"
 [ordered]@{
     started_at=(Get-Date).ToString("s")
@@ -133,6 +123,5 @@ $pidFile = Join-Path $pidDir "demo.json"
     processes=$processes
 } |
     ConvertTo-Json -Depth 6 | Set-Content -Path $pidFile -Encoding UTF8
-Write-Host "PASS: PostgreSQL + Redis -> TensorRT worker -> HTTP -> Qt demo is ready." -ForegroundColor Green
-Write-Host "In Qt click Check Service, then Start Session."
+Write-Host "PASS: PostgreSQL + Redis -> TensorRT worker -> HTTP service is ready." -ForegroundColor Green
 Write-Host "Camera administration: http://127.0.0.1:8087/camera-admin"

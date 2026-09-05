@@ -42,10 +42,8 @@ struct CameraStartApplicationOptions {
     bool override_run_spec = false;
 };
 
-// Application boundary shared by the canonical Camera HTTP API and, in the
-// next migration phase, the legacy People Flow compatibility controller.
-// HTTP authentication, request parsing, and response projection deliberately
-// stay outside this class.
+// Application boundary for the canonical Camera HTTP API. HTTP authentication,
+// request parsing, and response projection deliberately stay outside this class.
 class UnifiedCameraApplicationService final {
 public:
     UnifiedCameraApplicationService(

@@ -1,0 +1,106 @@
+{
+  "schema_version": "1.0",
+  "registry_version": "vehicle-model-registry-v3-best-components-256-r1",
+  "labels_version": "vehicle-labels-v1",
+  "created_at": "2026-09-04T01:09:00+08:00",
+  "target": {
+    "os": "windows",
+    "backend": "tensorrt",
+    "engine_portability": "target_host_only"
+  },
+  "artifacts": [
+    {
+      "artifact_id": "vehicle-det-v1",
+      "role": "detection",
+      "delivery_status": "deployed",
+      "architecture": "YOLO11s Detect",
+      "labels_version": "vehicle-labels-v1",
+      "input": {
+        "width": 960,
+        "height": 960,
+        "channels": 3,
+        "layout": "NCHW",
+        "color_order": "RGB",
+        "dtype": "float32"
+      },
+      "output_names": [
+        "vehicle_detections"
+      ],
+      "deployment": {
+        "backend": "tensorrt",
+        "precision": "fp16",
+        "max_batch": 1,
+        "target_os": "windows"
+      },
+      "files": {
+        "onnx_path": "models/vehicle-det-v1.onnx",
+        "engine_path": "engines/vehicle-det-v1.engine",
+        "onnx_sha256": "a2655b27c9c1905f1ffbc3e16cb08e9800cca549d74cecc01d1b0bf47c504b93",
+        "engine_sha256": "bdba13a99bea49c1bac448665fa102572bddf791a51c929b642020f586d53fb8"
+      },
+      "provenance": {
+        "dataset_version": "dataset-domain-bmd45-v1",
+        "training_run_id": "DET-DOMAIN-BMD45-FINETUNE-R1",
+        "code_commit": "0cbeb958857c2c8bddfd6b245a205c61b66e14fd",
+        "model_card_path": "models/evidence/vehicle-det-model-card.json",
+        "metrics_path": "models/evidence/vehicle-det-metrics.json"
+      }
+    },
+    {
+      "artifact_id": "vehicle-attr-best-components-256-r1",
+      "role": "attributes",
+      "delivery_status": "deployed",
+      "architecture": "dual ConvNeXt-Tiny specialists with embedded v2-to-v1 fail-closed projection",
+      "labels_version": "vehicle-labels-v1",
+      "input": {
+        "width": 256,
+        "height": 256,
+        "channels": 3,
+        "layout": "NCHW",
+        "color_order": "RGB",
+        "dtype": "float32"
+      },
+      "output_names": [
+        "body_type",
+        "color"
+      ],
+      "deployment": {
+        "backend": "tensorrt",
+        "precision": "fp16",
+        "max_batch": 16,
+        "target_os": "windows"
+      },
+      "files": {
+        "onnx_path": "models/candidates/vehicle-attr-best-components-256-r1/vehicle-attr-best-components-256-r1.onnx",
+        "engine_path": "models/candidates/vehicle-attr-best-components-256-r1/vehicle-attr-best-components-256-r1.engine",
+        "onnx_sha256": "b470c013acff8cfbe9a7cf7ead8184f8a1516998507cfce4ba342e4ecf4ed86e",
+        "engine_sha256": "eab83cc6e66133af5d61672e121465311ef914423dea54a2c32a6041ed98f5d6"
+      },
+      "provenance": {
+        "dataset_version": "attribute-domain-v2-stage159-stage168-best-components",
+        "training_run_id": "ATTR-STAGE167-BODY-CONVNEXT-256-STRETCH-R1+ATTR-STAGE158-COLOR-CONVNEXT-256-FRESH-R1",
+        "code_commit": "0cbeb958857c2c8bddfd6b245a205c61b66e14fd",
+        "model_card_path": "models/candidates/vehicle-attr-best-components-256-r1/model_card.json",
+        "metrics_path": "models/candidates/vehicle-attr-best-components-256-r1/onnx-export-report.json",
+        "calibration_path": "models/candidates/vehicle-attr-best-components-256-r1/model_card.json",
+        "parity_path": "models/candidates/vehicle-attr-best-components-256-r1/onnx-export-report.json",
+        "track_report_path": "training/artifacts/attribute-domain-v2/stage168-body-validation-r1/body/ATTR-STAGE167-BODY-CONVNEXT-256-STRETCH-R1__best/report.json"
+      },
+      "gates": {
+        "independent_component_validation": "pass_except_body_complex_coverage_gain_0.13085_vs_0.15_target",
+        "onnx_top1_parity": "pass",
+        "tensorrt_deserialize_smoke": "pass",
+        "cpp_real_engine_smoke": "pass",
+        "body_track_stability_rate": 0.9993089149965446,
+        "color_track_stability_rate": 0.9949312092686459
+      }
+    }
+  ],
+  "candidate_policy": {
+    "production_registry_overwritten": true,
+    "rollback_path": "F:\\codex\\project\\training\\artifacts\\deployment-rollbacks\\rollback-20260904-best-model-cutover",
+    "previous_attribute_artifact": "vehicle-attr-agent-e-224",
+    "detector_selection": "vehicle-det-v1 retained because Stage250 regressed on both base and BMD-45 validation",
+    "attribute_selection": "Stage167 body plus Stage159 color; best currently available independently validated components"
+  }
+}
